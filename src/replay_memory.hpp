@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cassert>
+#include "vector.hpp"
 #include "rng.hpp"
 
 /**
@@ -13,15 +14,15 @@ enum Flag : uint8_t {
 };
 
 // declarations
-template<class T>
+template<typename T>
 class Episode;
-template<class T>
+template<typename T>
 class ReplayMemory;
 
 /**
  * An Episode in replay memory
  */
-template<class T>
+template<typename T>
 class Episode
 {
 public:
@@ -30,36 +31,49 @@ public:
   // empty, filling or filled (terminated)
   Flag flag;
   // Actual data
-  std::vector<T> data;
+  Vector<T> data;
 
-  Episode(const ReplayMemory<T>& replay_memory) : rem{&replay_memory}, flag{Empty} {}
+  Episode(const ReplayMemory<T>& replay_memory)
+    : rem{&replay_memory}, flag{Empty}, data{rem->entry_size} {}
 
   void reset() {
     flag = Empty;
     data.clear();
   }
 
+  size_t size() const { return data.size(); }
 };
 
 template<class T>
 class DataBatch {
-  std::vector<T> prev;
-  std::vector<T> next;
+public:
+  Vector<T> prev;
+  Vector<T> next;
+
+  DataBatch(size_t entry_size) : prev{entry_size}, next{entry_size} {}
 };
 
 template<class T>
 class ReplayMemory
 {
 public:
-  // Max episode
-  const size_t max_episode;
-  // Episodes
-  std::vector<Episode<T>> episode;
+  const size_t entry_size;           // size of each entry (in bytes)
+  const size_t max_episode;          // Max episode
+  std::vector<Episode<T>> episode;   // Episodes
 
-  ReplayMemory(const size_t max_epi) : max_episode{max_epi} { episode.reserve(max_episode); }
+  /**
+   * Construct a new replay memory
+   * @param e_size   size of a single entry (in bytes)
+   * @param max_epi  max number of episodes kept in the memory
+   */
+  ReplayMemory(size_t e_size, size_t max_epi) : entry_size{e_size}, max_episode{max_epi}
+  {
+    episode.reserve(max_episode);
+  }
 
   /**
    * Get index of a new episode
+   * @return index of an episode just opened
    */
   size_t new_episode() {
     if(episode.size() < max_episode) {
@@ -83,34 +97,67 @@ public:
     }
   }
 
+  /**
+   * Close an episode (by setting its flag to `Filled`)
+   * @param epi_idx  index of the episode (should be opened)
+   */
   void close_episode(size_t epi_idx) {
     assert(epi_idx < episode.size());
     assert(episode[epi_idx].flag == Filling);
     episode[epi_idx].flag = Filled;
   }
 
-  template<typename... Args>
-  void emplace(size_t epi_idx, Args&&... args) {
+  /**
+   * Memcpy the content of src to the back of episode[epi_idx].
+   * This function is safe to be called in parallel, when epi_idx are different for these calls
+   *
+   * @param epi_idx  index of the episode (should be opened)
+   * @param src      pointer to the entry
+   */
+  void memcpy_back(size_t epi_idx, const T * src) {
     assert(epi_idx < episode.size());
     assert(episode[epi_idx].flag == Filling);
-    episode[epi_idx].emplace_back(std::forward<Args>(args)...);
+    episode[epi_idx].data.memcpy_back(src);
   }
 
-  void get_batch(size_t batch_size, DataBatch<T>& batch) const {
+  /**
+   * Get a batch of samples/transitions
+   *
+   * @param batch_size             batch_size
+   * @param batch                  batch instance for storing output samples
+   * @param finished_episodes_only sample only from finished episodes, if set true (default true)
+   * @param interval               interval between prev state and next state (normally 1)
+   *
+   * @return true iff success
+   */
+  bool get_batch(size_t batch_size, DataBatch<T>& batch,
+      bool finished_episodes_only = true, unsigned interval = 1) const {
+    assert(episode.size() > 0);
+    assert(batch.prev.entry_size == entry_size);
     batch.prev.clear();
     batch.next.clear();
     batch.prev.reserve(batch_size);
     batch.next.reserve(batch_size);
     for(size_t i=0; i<batch_size; i++) {
-      // choose an episode
       int epi_idx = g_rng() % episode.size();
-      assert(episode[epi_idx].size() > 0);
+      // choose an episode
+      int attempt = 0;
+      for( ; attempt<episode.size(); attempt++) {
+        epi_idx = g_rng() % episode.size();
+        if(episode[epi_idx].size() > interval) // we need prev state and next state
+          break;
+        else
+          epi_idx = (epi_idx + 1) % episode.size();
+      }
+      if(attempt==episode.size())
+        return false;
       // choose an example
-      int pre_idx = g_rng() % (episode[epi_idx].size() - 1);
+      int pre_idx = g_rng() % (episode[epi_idx].size() - interval);
       // add to batch
-      batch.prev.push_back(episode[epi_idx].data[pre_idx]);
-      batch.next.push_back(episode[epi_idx].data[pre_idx+1]);
+      batch.prev.memcpy_back(&episode[epi_idx].data[pre_idx]);
+      batch.next.memcpy_back(&episode[epi_idx].data[pre_idx + interval]);
     }
+    return true;
   }
 
 };

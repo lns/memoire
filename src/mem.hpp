@@ -1,15 +1,16 @@
 #pragma once
 
 #include <cstdlib>
-#include <cstring>  // memcpy
-#include <new>      // placement new
+#include <cstring>    // memcpy
+#include <new>        // placement new
+#include <algorithm>  // swap
 
 /**
  * A memory class with ownership
  */
 class Mem {
-  void * ptr_;      ///< data pointer
-  size_t len_;      ///< length in bytes
+  void * ptr_;        ///< data pointer
+  size_t len_;        ///< length in bytes
 public:
   void * data() const { return ptr_; }
   size_t size() const { return len_; }
