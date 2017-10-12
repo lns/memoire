@@ -3,19 +3,20 @@
 #include "mem.hpp"
 #include "vector.hpp"
 
-template<> size_t DataEntry<float, int, float, float, float>::state_size = 14;
-template<> size_t DataEntry<float, int, float, float, float>::action_size = 1;
-template<> size_t DataEntry<float, int, float, float, float>::reward_size = 1;
-template<> size_t DataEntry<float, int, float, float, float>::prob_size = 0;
-template<> size_t DataEntry<float, int, float, float, float>::value_size = 0;
+template<> size_t DataEntry<float, int, float>::state_size = 14;
+template<> size_t DataEntry<float, int, float>::action_size = 1;
+template<> size_t DataEntry<float, int, float>::reward_size = 1;
+template<> size_t DataEntry<float, int, float>::prob_size = 0;
+template<> size_t DataEntry<float, int, float>::value_size = 1;
 
 int main(int argc, char* argv[]) {
 
-  typedef DataEntry<float,int,float,float,float> Entry;
+  typedef DataEntry<float,int,float> Entry;
   printf("Entry::bytesize(): %lu\n", Entry::bytesize());
   printf("sizeof(Entry): %lu\n", sizeof(Entry));
 
   ReplayMemory<Entry> rem{Entry::bytesize(), 32768};
+  rem.discount_factor = 1.0;// 0.99;
   DataBatch<Entry> batch{Entry::bytesize()};
 
   Entry * pe = reinterpret_cast<Entry*>(malloc(Entry::bytesize()));
@@ -25,7 +26,7 @@ int main(int argc, char* argv[]) {
       pe->state()[0] = i;
       pe->state()[13] = i;
       pe->action()[0] = step;
-      pe->reward()[0] = 1.0/(1+i);
+      pe->reward()[0] = 1.0; //1/(1+i);
       rem.memcpy_back(epi_idx, pe);
     }
     rem.close_episode(epi_idx);
@@ -34,14 +35,16 @@ int main(int argc, char* argv[]) {
 
   for(size_t i=0; i<10ul; i++) {
     assert(true==rem.get_batch(32, batch, true));
-    printf("%f %d %f\n",
+    printf("%f %d %f %f\n",
         batch.prev[0].state()[0],
         batch.prev[0].action()[0],
-        batch.prev[0].reward()[0]);
-    printf("%f %d %f\n",
+        batch.prev[0].reward()[0],
+        batch.prev[0].value()[0]);
+    printf("%f %d %f %f\n",
         batch.next[0].state()[0],
         batch.next[0].action()[0],
-        batch.next[0].reward()[0]);
+        batch.next[0].reward()[0],
+        batch.next[0].value()[0]);
   }
   for(size_t i=0; i<32768ul; i++) {
     assert(true==rem.get_batch(32, batch, false));

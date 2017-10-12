@@ -7,11 +7,13 @@
  * Memory structure of an entry. Does not own the memory.
  * (Actually, we should not have member variables, except for static ones)
  */
-template<typename state_t, typename action_t, typename reward_t,
-  typename prob_t, typename value_t>
+template<typename state_t, typename action_t, typename reward_t>
 class DataEntry
 {
 public:
+  typedef float prob_t;       // probabilities are saved in float
+  typedef reward_t value_t;   // values should have the same type as reward
+
   static size_t state_size;   ///< num of state
   static size_t action_size;  ///< num of action
   static size_t reward_size;  ///< num of reward

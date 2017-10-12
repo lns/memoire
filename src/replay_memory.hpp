@@ -42,6 +42,33 @@ public:
   }
 
   size_t size() const { return data.size(); }
+
+  /**
+   * Update value when episode is finished
+   */
+  void update_value() {
+    if(T::value_size==0)
+      return;
+    assert(T::value_size == T::reward_size);
+    int i=data.size()-1;
+    if(true) { // last entry
+      auto prev_value = data[i].value();
+      auto prev_reward = data[i].reward();
+      for(int j=0; j<prev_value.size(); j++) { // OPTIMIZE:
+        prev_value[j] = prev_reward[j];
+      }
+    }
+    const auto& gamma = rem->discount_factor;
+    for( ; i>=0; i--) {
+      auto prev_value = data[i].value();
+      auto post_value = data[i+1].value();
+      auto prev_reward = data[i].reward();
+      for(int j=0; j<prev_value.size(); j++) { // OPTIMIZE:
+        prev_value[j] = prev_reward[j] + gamma * post_value[j];
+      }
+    }
+  }
+
 };
 
 template<class T>
@@ -60,6 +87,8 @@ public:
   const size_t entry_size;           // size of each entry (in bytes)
   const size_t max_episode;          // Max episode
   std::vector<Episode<T>> episode;   // Episodes
+
+  float discount_factor;             // discount factor for calculate R with rewards
 
   /**
    * Construct a new replay memory
@@ -105,6 +134,7 @@ public:
     assert(epi_idx < episode.size());
     assert(episode[epi_idx].flag == Filling);
     episode[epi_idx].flag = Filled;
+    episode[epi_idx].update_value();
   }
 
   /**
@@ -143,7 +173,6 @@ public:
       // choose an episode
       int attempt = 0;
       for( ; attempt<episode.size(); attempt++) {
-        epi_idx = g_rng() % episode.size();
         if(episode[epi_idx].size() > interval) // we need prev state and next state
           break;
         else

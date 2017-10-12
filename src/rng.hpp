@@ -1,1 +1,6 @@
-/home/qwang/sgame_env/src/rng.hpp
+#pragma once
+
+#include <random>
+
+std::default_random_engine g_rng(123 /* seed */);
+
