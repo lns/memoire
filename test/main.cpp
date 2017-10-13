@@ -2,35 +2,48 @@
 #include "mem.hpp"
 #include "vector.hpp"
 #include "backward.hpp"
+#include <thread>
 
 namespace backward {
   backward::SignalHandling sh;
 }
 
+template<class T>
+void add_entries(T& rem) {
+  // Add entries locally
+  float s[14];
+  int a[1];
+  float r[1];
+  float v[1];
+
+  for(size_t i=0; i<1024ul; i++) {
+    int epi_idx = rem.new_episode();
+    for(int step=0; step<32768; step++) {
+      s[0] = i;
+      s[13] = i;
+      a[0] = step;
+      r[0] = 1.0;
+      rem.add_entry(epi_idx, s, a, r, nullptr, v);
+    }
+    rem.close_episode(epi_idx);
+  }
+}
+
 int main(int argc, char* argv[]) {
 
   typedef ReplayMemory<float,int,float> RM;
-  RM rem{14,1,1,0,1, 32768};
+  RM rem{14,1,1,0,1, 1024};
   rem.discount_factor = 1.0;// 0.99;
 
-
   if(true) {
-    // Add entries locally
-    float s[14];
-    int a[1];
-    float r[1];
-    float v[1];
-
-    for(size_t i=0; i<32768ul; i++) {
-      int epi_idx = rem.new_episode();
-      for(int step=0; step<1024; step++) {
-        s[0] = i;
-        s[13] = i;
-        a[0] = step;
-        r[0] = 1.0;
-        rem.add_entry(epi_idx, s, a, r, nullptr, v);
-      }
-      rem.close_episode(epi_idx);
+    #define N_THREAD 16
+    std::thread * pt[N_THREAD];
+    for(int i=0; i<N_THREAD; i++) {
+      pt[i] = new std::thread(add_entries<RM>, std::ref(rem));
+    }
+    for(int i=0; i<N_THREAD; i++) {
+      pt[i]->join();
+      delete pt[i];
     }
   }
 

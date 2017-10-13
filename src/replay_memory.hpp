@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cassert>
+#include <mutex>
 #include "array.hpp"
 #include "vector.hpp"
 #include "rng.hpp"
@@ -139,8 +140,7 @@ public:
     Episode(const ReplayMemory& replay_memory)
       : rem{&replay_memory}, flag{Empty}, data{rem->entry_size} {}
 
-    void reset() {
-      flag = Empty;
+    void clear() {
       data.clear();
     }
 
@@ -161,6 +161,7 @@ public:
           prev_value[j] = prev_reward[j];
         }
       }
+      i--;
       const auto& gamma = rem->discount_factor;
       for( ; i>=0; i--) {
         auto prev_value = data[i].value(rem);
@@ -184,6 +185,7 @@ public:
   const size_t entry_size;           ///< size of each entry (in bytes)
   const size_t max_episode;          ///< Max episode
   std::vector<Episode> episode;      ///< Episodes
+  std::mutex episode_mutex;          ///< mutex for new/close an episode
 
   float discount_factor;             ///< discount factor for calculate R with rewards
 
@@ -214,25 +216,34 @@ public:
    * @return index of an episode just opened
    */
   size_t new_episode() {
-    if(episode.size() < max_episode) {
-      // Use a new episode
-      episode.emplace_back(*this);
-      size_t idx = episode.size()-1;
-      episode[idx].flag = Filling;
-      return idx;
-    } else {
-      // Reuse an old episode
-      std::uniform_int_distribution<size_t> dis(0, episode.size()-1);
-      for(int i=0; i<128; i++) { // TODO: 128 attempts
-        size_t idx = dis(g_rng);
-        if(episode[idx].flag!=Filling) {
-          episode[idx].reset();
-          episode[idx].flag = Filling;
-          return idx;
+    for(int attempt=0; attempt<2; attempt++) {
+      if(episode.size() < max_episode) {
+        // Use a new episode
+        std::lock_guard<std::mutex> guard(episode_mutex);
+        if(episode.size() >= max_episode)
+          continue;
+        episode.emplace_back(*this);
+        size_t idx = episode.size()-1;
+        episode[idx].flag = Filling;
+        return idx;
+      } else {
+        // Reuse an old episode
+        std::uniform_int_distribution<size_t> dis(0, episode.size()-1);
+        for(int i=0; i<128; i++) { // TODO: 128 attempts
+          size_t idx = dis(g_rng);
+          if(episode[idx].flag!=Filling) {
+            std::lock_guard<std::mutex> guard(episode_mutex);
+            if(episode[idx].flag==Filling) // OPTIMIZE: use a CAS op
+              continue;
+            episode[idx].flag = Filling;
+            episode[idx].clear();
+            return idx;
+          }
         }
+        assert(false and "Cannot found available episode slot.");
       }
-      assert(false and "Cannot found available episode slot.");
     }
+    assert(false and "Cannot happen!");
   }
 
   /**
@@ -242,8 +253,8 @@ public:
   void close_episode(size_t epi_idx) {
     assert(epi_idx < episode.size());
     assert(episode[epi_idx].flag == Filling);
-    episode[epi_idx].flag = Filled;
     episode[epi_idx].update_value();
+    episode[epi_idx].flag = Filled;
   }
 
   /**
