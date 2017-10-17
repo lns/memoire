@@ -119,7 +119,10 @@ public:
     }
 
   };
+private:
+  typedef DataEntry T;
 
+public:
   /**
    * Message protocal
    */
@@ -136,10 +139,10 @@ public:
     DataEntry entry;
   };
 
-private:
-  typedef DataEntry T;
+  static int req_size() { return sizeof(Message); }
+  static int rep_size() { return sizeof(Message) + 5*sizeof(size_t); }
+  int push_size() const { return sizeof(Message) + T::bytesize(this); }
 
-public:
   /**
    * An Episode in replay memory
    */
@@ -166,7 +169,7 @@ public:
      * Update value when episode is finished
      */
     void update_value() {
-      if(rem->value_size==0)
+      if(rem->value_size==0 or data.size()==0)
         return;
       assert(rem->value_size == rem->reward_size);
       int i=data.size()-1;
@@ -225,6 +228,15 @@ public:
     max_episode{max_epi}
   {
     episode.reserve(max_episode);
+  }
+
+  void print_info() const {
+    printf("state_size:  %lu\n", state_size);
+    printf("action_size: %lu\n", action_size);
+    printf("reward_size: %lu\n", reward_size);
+    printf("prob_size:   %lu\n", prob_size);
+    printf("value_size:  %lu\n", value_size);
+    printf("max_episode: %lu\n", max_episode);
   }
 
   /**
@@ -329,20 +341,26 @@ public:
       reward_t * next_r,
       prob_t   * next_p,
       value_t  * next_v,
-      bool finished_episodes_only = true, unsigned interval = 1) const {
+      bool finished_episodes_only = true, unsigned interval = 1) {
     assert(episode.size() > 0);
+    if(finished_episodes_only)
+      episode_mutex.lock();
     for(size_t i=0; i<batch_size; i++) {
       int epi_idx = g_rng() % episode.size();
       // choose an episode
       int attempt = 0;
       for( ; attempt<episode.size(); attempt++) {
-        if(episode[epi_idx].size() > interval) // we need prev state and next state
+        if(episode[epi_idx].size() > interval // we need prev state and next state
+            and (!finished_episodes_only or episode[epi_idx].flag == Filled))
           break;
         else
           epi_idx = (epi_idx + 1) % episode.size();
       }
-      if(attempt==episode.size())
+      if(attempt==episode.size()) {
+        if(finished_episodes_only)
+          episode_mutex.unlock();
         return false;
+      }
       // choose an example
       int pre_idx = g_rng() % (episode[epi_idx].size() - interval);
       // add to batch
@@ -351,6 +369,8 @@ public:
       auto& next_entry = episode[epi_idx].data[pre_idx + interval];
       next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
     }
+    if(finished_episodes_only)
+      episode_mutex.unlock();
     return true;
   }
 
@@ -361,8 +381,9 @@ public:
   int process(char * inbuf, int size, char * oubuf, int oubuf_size) {
     // TODO: add const
     Message * args = reinterpret_cast<Message*>(inbuf);
-    Message * rets = reinterpret_cast<Message*>(oubuf);
+    Message * rets = reinterpret_cast<Message*>(oubuf); // may be nullptr
     if(args->type == Message::CloseAndNew) {
+      assert(rets);
       // close last episode and get a new episode
       int epi_idx = args->epi_idx;
       if(epi_idx >= 0)
@@ -376,11 +397,10 @@ public:
       // add an entry
       int epi_idx = args->epi_idx;
       memcpy_back(epi_idx, &args->entry);
-      rets->type = Message::Success;
-      rets->epi_idx = epi_idx;
-      return sizeof(Message);
+      return 0;
     }
     if(args->type == Message::GetSizes) {
+      assert(rets);
       // return sizes
       rets->type = Message::Success;
       rets->epi_idx = -1;

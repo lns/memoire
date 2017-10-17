@@ -1,6 +1,7 @@
 #pragma once
 
 #include "zmq.h"
+#include "qlog.hpp"
 
 #ifndef MIN
 #define MIN(a,b) ((a)>(b)?(b):(a))
@@ -30,6 +31,7 @@ protected:
     int e = zmq_errno(); \
     fprintf(stderr, "In %s(), %s:%d\n",__func__,__FILE__,__LINE__); \
     fprintf(stderr, "[%d]'%s' (rc: %d)\n", e, zmq_strerror(e), rc); \
+    abort(); \
   } \
 } while(0)
 

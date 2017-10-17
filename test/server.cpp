@@ -1,7 +1,7 @@
 #include "replay_memory.hpp"
 #include "backward.hpp"
 #include <thread>
-#include "mtserver.hpp"
+#include "server.hpp"
 #include "client.hpp"
 #include "qlog.hpp"
 
@@ -19,38 +19,26 @@ int main(int argc, char* argv[])
 
   typedef ReplayMemory<float,int,float> RM;
   typedef ReplayMemoryClient<float,int,float> RMC;
+  typedef ReplayMemoryServer<RM> RMS;
+
   RM rem{S_SIZE,A_SIZE,R_SIZE,0,R_SIZE, 64};
   rem.discount_factor = 1.0;// 0.99;
 
-  worker_func_t worker_func = [&rem](char * inbuf, int inbuf_size, char * oubuf, int oubuf_size) -> int {
-    return rem.process(inbuf, inbuf_size, oubuf, oubuf_size);
-  };
-
-  int inbuf_size = RM::DataEntry::bytesize(&rem) + sizeof(RM::Message); // OPTIMIZE: DIVUP
-  int oubuf_size = sizeof(RM::Message) + 5*sizeof(size_t);
-
   void * ctx = zmq_ctx_new();
-#if 1
-  std::thread server(server_main, worker_func, ctx, inbuf_size, oubuf_size,
-      "tcp://*:5561", "inproc://workers", "inproc://workers", 7);
-#else
-  server_main(worker_func, ctx, inbuf_size, oubuf_size,
-      "tcp://*:5561", "inproc://workers", "inproc://workers", 7);
-#endif
-  
-  RMC client{ctx, "tcp://localhost:5561", inbuf_size, oubuf_size};
+  RMS server(&rem, ctx, "tcp://*:5561", "tcp://*:5562");
+ 
+  RMC client{ctx, "tcp://localhost:5561", "tcp://localhost:5562"};
 
   qlog_info("Begin adding entries.\n");
   if(true) {
     float s[S_SIZE];
     int   a[A_SIZE];
     float r[R_SIZE];
-    float v[R_SIZE];
 
     int epi_idx = -1;
-    for(int iter=0; iter<256; iter++) {
+    for(int iter=0; iter<2; iter++) {
       epi_idx = client.close_and_new(epi_idx);
-      for(int step=0; step<64; step++) {
+      for(int step=0; step<4; step++) {
         s[0] = iter;
         s[S_SIZE-1] = iter;
         a[0] = step;
