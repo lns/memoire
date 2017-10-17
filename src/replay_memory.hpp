@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cassert>
 #include <mutex>
-#include "array.hpp"
+#include "array_view.hpp"
 #include "vector.hpp"
 #include "rng.hpp"
 #include "utils.hpp" // non_copyable
@@ -38,40 +38,40 @@ public:
         + p->value_size * sizeof(value_t);
     }
 
-    Array<state_t> state(const ReplayMemory * p) {
+    ArrayView<state_t> state(const ReplayMemory * p) {
       char * head = reinterpret_cast<char*>(this);
       size_t offset = 0;
-      return Array<state_t>(head + offset, p->state_size);
+      return ArrayView<state_t>(head + offset, p->state_size);
     }
 
-    Array<action_t> action(const ReplayMemory * p) {
+    ArrayView<action_t> action(const ReplayMemory * p) {
       char * head = reinterpret_cast<char*>(this);
       size_t offset = p->state_size * sizeof(state_t);
-      return Array<action_t>(head + offset, p->action_size);
+      return ArrayView<action_t>(head + offset, p->action_size);
     }
 
-    Array<reward_t> reward(const ReplayMemory * p) {
+    ArrayView<reward_t> reward(const ReplayMemory * p) {
       char * head = reinterpret_cast<char*>(this);
       size_t offset = p->state_size * sizeof(state_t)
         + p->action_size * sizeof(action_t);
-      return Array<reward_t>(head + offset, p->reward_size);
+      return ArrayView<reward_t>(head + offset, p->reward_size);
     }
 
-    Array<prob_t> prob(const ReplayMemory * p) {
+    ArrayView<prob_t> prob(const ReplayMemory * p) {
       char * head = reinterpret_cast<char*>(this);
       size_t offset = p->state_size * sizeof(state_t)
         + p->action_size * sizeof(action_t)
         + p->reward_size * sizeof(reward_t);
-      return Array<prob_t>(head + offset, p->prob_size);
+      return ArrayView<prob_t>(head + offset, p->prob_size);
     }
 
-    Array<value_t> value(const ReplayMemory * p) {
+    ArrayView<value_t> value(const ReplayMemory * p) {
       char * head = reinterpret_cast<char*>(this);
       size_t offset = p->state_size * sizeof(state_t)
         + p->action_size * sizeof(action_t)
         + p->reward_size * sizeof(reward_t)
         + p->prob_size * sizeof(prob_t);
-      return Array<value_t>(head + offset, p->value_size);
+      return ArrayView<value_t>(head + offset, p->value_size);
     }
 
     /**
@@ -118,6 +118,22 @@ public:
         value(p).to_memory(p_v + index * p->value_size);
     }
 
+  };
+
+  /**
+   * Message protocal
+   */
+  class Message : public non_copyable
+  {
+  public:
+    static const int Success = 10;
+    static const int CloseAndNew = 11;
+    static const int AddEntry = 12;
+    static const int GetSizes = 13;
+
+    int type;
+    int epi_idx;
+    DataEntry entry;
   };
 
 private:
@@ -336,6 +352,48 @@ public:
       next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
     }
     return true;
+  }
+
+  /**
+   * Process a message request
+   * This is used in server-client protocal
+   */
+  int process(char * inbuf, int size, char * oubuf, int oubuf_size) {
+    // TODO: add const
+    Message * args = reinterpret_cast<Message*>(inbuf);
+    Message * rets = reinterpret_cast<Message*>(oubuf);
+    if(args->type == Message::CloseAndNew) {
+      // close last episode and get a new episode
+      int epi_idx = args->epi_idx;
+      if(epi_idx >= 0)
+        close_episode(epi_idx);
+      epi_idx = new_episode();
+      rets->type = Message::Success;
+      rets->epi_idx = epi_idx;
+      return sizeof(Message);
+    }
+    if(args->type == Message::AddEntry) {
+      // add an entry
+      int epi_idx = args->epi_idx;
+      memcpy_back(epi_idx, &args->entry);
+      rets->type = Message::Success;
+      rets->epi_idx = epi_idx;
+      return sizeof(Message);
+    }
+    if(args->type == Message::GetSizes) {
+      // return sizes
+      rets->type = Message::Success;
+      rets->epi_idx = -1;
+      size_t * p = reinterpret_cast<size_t *>(&rets->entry);
+      p[0] = state_size;
+      p[1] = action_size;
+      p[2] = reward_size;
+      p[3] = prob_size;
+      p[4] = value_size;
+      return sizeof(Message) + 5*sizeof(size_t);
+    }
+    fprintf(stderr, "Unknown message type: %d\n", args->type);
+    assert(false);
   }
 
 };

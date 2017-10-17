@@ -8,7 +8,7 @@
  * @param T   every chunk of memory will be interpreted as an instance of T
  */
 template<typename T>
-class Array {
+class ArrayView {
   void * data_;              ///< head pointer
   size_t entry_num_;         ///< number of entries
 public:
@@ -21,8 +21,8 @@ public:
    * Constructor
    * @param e_size  actual memory size of each entry
    */
-  Array(void * data, size_t size, size_t e_size) : data_{data}, entry_num_{size}, entry_size{e_size} {}
-  Array(void * data, size_t size) : data_{data}, entry_num_{size}, entry_size{sizeof(T)} {}
+  ArrayView(void * data, size_t size, size_t e_size) : data_{data}, entry_num_{size}, entry_size{e_size} {}
+  ArrayView(void * data, size_t size) : data_{data}, entry_num_{size}, entry_size{sizeof(T)} {}
 
   /**
    * Access the ith entry
