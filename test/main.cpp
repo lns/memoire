@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
   rem.discount_factor = 1.0;// 0.99;
 
   if(true) {
-    #define N_THREAD 16
+    #define N_THREAD 1
     std::thread * pt[N_THREAD];
     for(int i=0; i<N_THREAD; i++) {
       pt[i] = new std::thread(add_entries<RM>, std::ref(rem));
@@ -50,6 +50,8 @@ int main(int argc, char* argv[]) {
       delete pt[i];
     }
   }
+  
+  exit(0);
 
   if(true) {
     // Get batch data

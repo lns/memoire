@@ -1,20 +1,12 @@
 #pragma once
 #include <cstdint>
 #include <cassert>
+#include <atomic>
 #include <mutex>
 #include "array_view.hpp"
 #include "vector.hpp"
 #include "rng.hpp"
 #include "utils.hpp" // non_copyable
-
-/**
- * Episode Flag
- */
-enum Flag : uint8_t {
-  Empty = 0,
-  Filling = 1,
-  Filled = 2,
-};
 
 template<typename state_t, typename action_t, typename reward_t>
 class ReplayMemory
@@ -119,7 +111,8 @@ public:
     }
 
   };
-private:
+
+protected:
   typedef DataEntry T;
 
 public:
@@ -129,19 +122,18 @@ public:
   class Message : public non_copyable
   {
   public:
-    static const int Success = 10;
-    static const int CloseAndNew = 11;
-    static const int AddEntry = 12;
-    static const int GetSizes = 13;
+    static const int Success = 20;
+    static const int AddEpisode = 21;
+    static const int GetSizes = 22;
 
     int type;
-    int epi_idx;
+    int length;  // length of episode (in number of entries)
     DataEntry entry;
   };
 
-  static int req_size() { return sizeof(Message); }
-  static int rep_size() { return sizeof(Message) + 5*sizeof(size_t); }
-  int push_size() const { return sizeof(Message) + T::bytesize(this); }
+  static int reqbuf_size()  { return sizeof(Message); }
+  static int repbuf_size()  { return sizeof(Message) + 5*sizeof(size_t); }
+  static int pushbuf_size() { return sizeof(Message); }
 
   /**
    * An Episode in replay memory
@@ -151,17 +143,17 @@ public:
   public:
     // Const ptr to parent replay memory
     const ReplayMemory * rem;
-    // empty, filling or filled (terminated)
-    Flag flag;
+    // increment
+    std::atomic<uint64_t> inc;
     // Actual data (owns the memory)
     Vector<T> data;
 
     Episode(const ReplayMemory& replay_memory)
-      : rem{&replay_memory}, flag{Empty}, data{rem->entry_size} {}
+      : rem{&replay_memory}, inc{0}, data{rem->entry_size} {}
+    Episode(Episode&& src) // for stl
+      : rem{src.rem}, inc{src.inc.load()}, data{src.data} {}
 
-    void clear() {
-      data.clear();
-    }
+    void clear() { data.clear(); }
 
     size_t size() const { return data.size(); }
 
@@ -193,6 +185,9 @@ public:
     }
 
   };
+
+  #define IS_FILLING(inc) ((inc)%2==1)
+  #define IS_FILLED(inc)  ((inc)%2==0)
 
 public:
   const size_t state_size;           ///< num of state
@@ -252,18 +247,17 @@ public:
           continue;
         episode.emplace_back(*this);
         size_t idx = episode.size()-1;
-        episode[idx].flag = Filling;
+        episode[idx].inc++; // filled -> filling
         return idx;
       } else {
         // Reuse an old episode
         std::uniform_int_distribution<size_t> dis(0, episode.size()-1);
         for(int i=0; i<128; i++) { // TODO: 128 attempts
           size_t idx = dis(g_rng);
-          if(episode[idx].flag!=Filling) {
-            std::lock_guard<std::mutex> guard(episode_mutex);
-            if(episode[idx].flag==Filling) // OPTIMIZE: use a CAS op
+          uint64_t loaded = episode[idx].inc;
+          if(IS_FILLED(loaded)) {
+            if(not atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+1))
               continue;
-            episode[idx].flag = Filling;
             episode[idx].clear();
             return idx;
           }
@@ -280,26 +274,30 @@ public:
    */
   void close_episode(size_t epi_idx) {
     assert(epi_idx < episode.size());
-    assert(episode[epi_idx].flag == Filling);
+    uint64_t loaded = episode[epi_idx].inc;
+    assert(IS_FILLING(loaded));
     episode[epi_idx].update_value();
-    episode[epi_idx].flag = Filled;
+    assert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
   }
 
   /**
    * Memcpy the content of src to the back of episode[epi_idx].
    * This function is safe to be called in parallel, when epi_idx are different for these calls
+   * Not thread-safe with identical epi_idx
    *
    * @param epi_idx  index of the episode (should be opened)
    * @param src      pointer to the entry
    */
   void memcpy_back(size_t epi_idx, const T * src) {
     assert(epi_idx < episode.size());
-    assert(episode[epi_idx].flag == Filling);
+    assert(IS_FILLING(episode[epi_idx].inc));
     episode[epi_idx].data.memcpy_back(src);
   }
 
   /**
-   * Add an entry to an existing episode
+   * Add an entry to an existing episode.
+   * Not thread-safe with identical epi_idx
+   *
    * @param p_s     pointer to state (can be nullptr to be omitted)
    * @param p_a     pointer to action (can be nullptr to be omitted)
    * @param p_r     pointer to reward (can be nullptr to be omitted)
@@ -313,7 +311,7 @@ public:
       const prob_t   * p_p,
       const value_t  * p_v) {
     assert(epi_idx < episode.size());
-    assert(episode[epi_idx].flag == Filling);
+    assert(IS_FILLING(episode[epi_idx].inc));
     episode[epi_idx].data.memcpy_back(nullptr); // push_back an empty entry, which will be filled later
     auto& entry = episode[epi_idx].data[ episode[epi_idx].data.size()-1 ]; // last one
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v);
@@ -342,23 +340,28 @@ public:
       prob_t   * next_p,
       value_t  * next_v,
       bool finished_episodes_only = true, unsigned interval = 1) {
-    assert(episode.size() > 0);
-    if(finished_episodes_only)
-      episode_mutex.lock();
+    if(episode.size() == 0) {
+      fprintf(stderr, "get_batch() failed as ReplayMemory is empty.\n");
+      return false;
+    }
     for(size_t i=0; i<batch_size; i++) {
       int epi_idx = g_rng() % episode.size();
       // choose an episode
       int attempt = 0;
+      uint64_t loaded;
       for( ; attempt<episode.size(); attempt++) {
+        loaded = episode[epi_idx].inc;
         if(episode[epi_idx].size() > interval // we need prev state and next state
-            and (!finished_episodes_only or episode[epi_idx].flag == Filled))
+            and (!finished_episodes_only or IS_FILLED(loaded)))
           break;
         else
           epi_idx = (epi_idx + 1) % episode.size();
       }
       if(attempt==episode.size()) {
+        fprintf(stderr, "get_batch() failed. This may due to a large interval (%u) used.\n", interval);
         if(finished_episodes_only)
-          episode_mutex.unlock();
+          fprintf(stderr, "Or due to all episodes are currently filling, as finished_episodes_only is set to '%d'\n",
+              (int)finished_episodes_only);
         return false;
       }
       // choose an example
@@ -368,52 +371,104 @@ public:
       prev_entry.to_memory(this, i, prev_s, prev_a, prev_r, prev_p, prev_v);
       auto& next_entry = episode[epi_idx].data[pre_idx + interval];
       next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
+      if(loaded != episode[epi_idx].inc) // memory has been altered, redo this sample
+        i--;
     }
-    if(finished_episodes_only)
-      episode_mutex.unlock();
     return true;
   }
 
-  /**
-   * Process a message request
-   * This is used in server-client protocal
-   */
-  int process(char * inbuf, int size, char * oubuf, int oubuf_size) {
-    // TODO: add const
-    Message * args = reinterpret_cast<Message*>(inbuf);
-    Message * rets = reinterpret_cast<Message*>(oubuf); // may be nullptr
-    if(args->type == Message::CloseAndNew) {
-      assert(rets);
-      // close last episode and get a new episode
-      int epi_idx = args->epi_idx;
-      if(epi_idx >= 0)
-        close_episode(epi_idx);
-      epi_idx = new_episode();
-      rets->type = Message::Success;
-      rets->epi_idx = epi_idx;
-      return sizeof(Message);
+  #define MODE_CONN 0 // use zmq_connect()
+  #define MODE_BIND 1 // use zmq_bind()
+
+  static void pull_thread_main(
+      ReplayMemory * prm,
+      void * ctx,
+      const char * endpoint,
+      int mode)
+  {
+    void * soc = zmq_socket(ctx, ZMQ_PULL); assert(soc);
+    if(mode == MODE_BIND)
+      ZMQ_CALL(zmq_bind(soc, endpoint));
+    else if(mode == MODE_CONN)
+      ZMQ_CALL(zmq_connect(soc, endpoint));
+    int buf_size = prm->pushbuf_size();
+    char * buf = (char*)malloc(buf_size); assert(buf);
+    Message * args = reinterpret_cast<Message*>(buf);
+    int size;
+    while(true) {
+      ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); assert(size <= buf_size);
+      if(args->type == Message::AddEpisode) {
+        size_t epi_idx = prm->new_episode();
+        prm->episode[epi_idx].data.reserve(args->length);
+        size_t expected_size = prm->entry_size * args->length;
+        ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].data.data(), expected_size, 0));
+        assert(size == expected_size);
+        prm->episode[epi_idx].data.set_size(args->length);
+        prm->close_episode(epi_idx);
+      }
+      else
+        assert(false && "Unknown args->type");
     }
-    if(args->type == Message::AddEntry) {
-      // add an entry
-      int epi_idx = args->epi_idx;
-      memcpy_back(epi_idx, &args->entry);
-      return 0;
+    // never
+    free(buf);
+    zmq_close(soc);
+  }
+
+  static void rep_thread_main(
+      ReplayMemory * prm,
+      void * ctx,
+      const char * endpoint,
+      int mode)
+  {
+    void * soc = zmq_socket(ctx, ZMQ_REP); assert(soc);
+    if(mode == MODE_BIND)
+      ZMQ_CALL(zmq_bind(soc, endpoint));
+    else if(mode == MODE_CONN)
+      ZMQ_CALL(zmq_connect(soc, endpoint));
+    int reqbuf_size = prm->reqbuf_size();
+    char * reqbuf = (char*)malloc(reqbuf_size); assert(reqbuf);
+    int repbuf_size = prm->repbuf_size();
+    char * repbuf = (char*)malloc(repbuf_size); assert(repbuf);
+    Message * args = reinterpret_cast<Message*>(reqbuf);
+    Message * rets = reinterpret_cast<Message*>(repbuf);
+    int size;
+    while(true) {
+      ZMQ_CALL(size = zmq_recv(soc, reqbuf, reqbuf_size, 0)); assert(size <= reqbuf_size);
+      if(args->type == Message::GetSizes) {
+        // return sizes
+        rets->type = Message::Success;
+        size_t * p = reinterpret_cast<size_t *>(&rets->entry);
+        p[0] = prm->state_size;
+        p[1] = prm->action_size;
+        p[2] = prm->reward_size;
+        p[3] = prm->prob_size;
+        p[4] = prm->value_size;
+        ZMQ_CALL(zmq_send(soc, repbuf, sizeof(Message) + 5*sizeof(size_t), 0));
+      }
+      else
+        assert(false && "Unknown args->type");
     }
-    if(args->type == Message::GetSizes) {
-      assert(rets);
-      // return sizes
-      rets->type = Message::Success;
-      rets->epi_idx = -1;
-      size_t * p = reinterpret_cast<size_t *>(&rets->entry);
-      p[0] = state_size;
-      p[1] = action_size;
-      p[2] = reward_size;
-      p[3] = prob_size;
-      p[4] = value_size;
-      return sizeof(Message) + 5*sizeof(size_t);
-    }
-    fprintf(stderr, "Unknown message type: %d\n", args->type);
-    assert(false);
+    // never
+    free(reqbuf);
+    free(repbuf);
+    zmq_close(soc);
+  }
+
+  static void proxy_main(
+      void * ctx,
+      int front_soc_type,
+      const char * front_endpoint,
+      int back_soc_type,
+      const char * back_endpoint)
+  {
+    void * front = zmq_socket(ctx, front_soc_type); assert(front);
+    void * back  = zmq_socket(ctx,  back_soc_type); assert(back);
+    ZMQ_CALL(zmq_bind(front, front_endpoint));
+    ZMQ_CALL(zmq_bind(back, back_endpoint));
+    ZMQ_CALL(zmq_proxy(front, back, nullptr));
+    // never
+    zmq_close(front);
+    zmq_close(back);
   }
 
 };
