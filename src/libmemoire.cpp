@@ -1,5 +1,4 @@
-#include "replay_memory.hpp"
-#include "backward.hpp"
+#include "pymodule.hpp"
 #include <cstdio>
 
 namespace backward {
@@ -9,6 +8,6 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire, ver 17.10.12.\n");
+  fprintf(stderr, " Memoire, ver 17.10.20.\n");
 }
 

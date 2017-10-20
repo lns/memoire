@@ -24,18 +24,24 @@ int main(int argc, char* argv[])
   RM rem{S_SIZE,A_SIZE,R_SIZE,0,R_SIZE, 8192};
   rem.discount_factor = 1.0;// 0.99;
 
-  void * ctx = zmq_ctx_new();
-  RMS server(&rem, ctx);
+  RMS server(&rem);
 
-  //server.start_rep_proxy("tcp://*:5561", "inproc://rep_workers");
-  server.start_pull_proxy("tcp://*:5562", "inproc://pull_workers");
+  std::vector<std::thread> threads;
+  //threads.emplace_back([&server](){ server.rep_proxy_main("tcp://*:5561", "inproc://rep_workers"); });
+  threads.emplace_back([&server](){
+      server.pull_proxy_main("tcp://*:5562", "inproc://pull_workers");
+    });
 
-  server.start_rep_worker ("tcp://*:5561", 1, MODE_BIND);
-  server.start_pull_worker("inproc://pull_workers", 4, MODE_CONN);
+  threads.emplace_back([&server](){
+      server.rep_worker_main("tcp://*:5561", RM::Bind);
+    });
+  threads.emplace_back([&server](){
+      server.pull_worker_main("inproc://pull_workers", RM::Conn);
+    });
 
   //sleep(1);
  
-  RMC client{ctx, "tcp://localhost:5561", "tcp://localhost:5562", 1};
+  RMC client{"tcp://localhost:5561", "tcp://localhost:5562", 1};
 
   qlog_info("Begin adding entries.\n");
   if(true) {
@@ -53,7 +59,7 @@ int main(int argc, char* argv[])
         a[A_SIZE-1] = step;
         r[0] = 1;
         r[R_SIZE-1] = 1;
-        client.prm->add_entry(epi_idx, s, a, r, nullptr, nullptr);
+        client.prm->add_entry(epi_idx, s, a, r, nullptr);
       }
       client.prm->close_episode(epi_idx);
       client.push_episode_to_remote(epi_idx);
@@ -109,9 +115,9 @@ int main(int argc, char* argv[])
   }
   qlog_info("All finished.\n");
 
-  server.join_all();
+  for(auto&& each : threads)
+    each.join();
 
-  zmq_ctx_destroy(ctx);
   return 0;
 }
 

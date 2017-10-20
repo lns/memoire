@@ -29,9 +29,8 @@ protected:
   int rc = (x); \
   if(-1==rc) { \
     int e = zmq_errno(); \
-    fprintf(stderr, "In %s(), %s:%d\n",__func__,__FILE__,__LINE__); \
-    fprintf(stderr, "[%d]'%s' (rc: %d)\n", e, zmq_strerror(e), rc); \
-    abort(); \
+    qlog_error("[%d]'%s' (rc: %d)\n", e, zmq_strerror(e), rc); \
+    throw std::runtime_error("ZeroMQ call failed."); \
   } \
 } while(0)
 

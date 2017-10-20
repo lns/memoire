@@ -18,7 +18,6 @@ void add_entries(T& rem) {
   float s[S_SIZE];
   int   a[A_SIZE];
   float r[R_SIZE];
-  float v[R_SIZE];
 
   for(size_t i=0; i<1000ul; i++) {
     int epi_idx = rem.new_episode();
@@ -27,7 +26,7 @@ void add_entries(T& rem) {
       s[S_SIZE-1] = i;
       a[0] = step;
       r[0] = 1.0;
-      rem.add_entry(epi_idx, s, a, r, nullptr, v);
+      rem.add_entry(epi_idx, s, a, r, nullptr);
     }
     rem.close_episode(epi_idx);
   }

@@ -1,11 +1,12 @@
 #pragma once
 #include <cstdint>
-#include <cassert>
 #include <atomic>
 #include <mutex>
+#include "qlog.hpp"
 #include "array_view.hpp"
 #include "vector.hpp"
 #include "rng.hpp"
+#include <signal.h>
 #include "utils.hpp" // non_copyable
 
 template<typename state_t, typename action_t, typename reward_t>
@@ -22,7 +23,7 @@ public:
   class DataEntry : public non_copyable
   {
   public:
-    static size_t bytesize(const ReplayMemory * p) {
+    static size_t nbytes(const ReplayMemory * p) {
       return p->state_size * sizeof(state_t)
         + p->action_size * sizeof(action_t)
         + p->reward_size * sizeof(reward_t)
@@ -219,7 +220,7 @@ public:
     reward_size{r_size},
     prob_size{p_size},
     value_size{v_size},
-    entry_size{T::bytesize(this)},
+    entry_size{T::nbytes(this)},
     max_episode{max_epi}
   {
     episode.reserve(max_episode);
@@ -262,10 +263,10 @@ public:
             return idx;
           }
         }
-        assert(false and "Cannot found available episode slot.");
+        qthrow("Cannot found available episode slot.");
       }
     }
-    assert(false and "Cannot happen!");
+    qthrow("Cannot happen!");
   }
 
   /**
@@ -273,11 +274,29 @@ public:
    * @param epi_idx  index of the episode (should be opened)
    */
   void close_episode(size_t epi_idx) {
-    assert(epi_idx < episode.size());
+    qassert(epi_idx < episode.size());
     uint64_t loaded = episode[epi_idx].inc;
-    assert(IS_FILLING(loaded));
+    qassert(IS_FILLING(loaded));
     episode[epi_idx].update_value();
-    assert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
+    qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
+  }
+
+  /**
+   * Clear all `Filled` data
+   * Filling episodes will remain valid
+   */
+  void clear() {
+    for(auto&& each : episode) {
+      uint64_t loaded = each.inc;
+      if(IS_FILLING(loaded))
+        continue;
+      if(not atomic_compare_exchange_strong(&each.inc, &loaded, loaded+1)) // failed
+        continue;
+      loaded ++;
+      // now filling
+      each.clear();
+      qassert(atomic_compare_exchange_strong(&each.inc, &loaded, loaded+1));
+    }
   }
 
   /**
@@ -289,8 +308,8 @@ public:
    * @param src      pointer to the entry
    */
   void memcpy_back(size_t epi_idx, const T * src) {
-    assert(epi_idx < episode.size());
-    assert(IS_FILLING(episode[epi_idx].inc));
+    qassert(epi_idx < episode.size());
+    qassert(IS_FILLING(episode[epi_idx].inc));
     episode[epi_idx].data.memcpy_back(src);
   }
 
@@ -308,13 +327,12 @@ public:
       const state_t  * p_s,
       const action_t * p_a,
       const reward_t * p_r,
-      const prob_t   * p_p,
-      const value_t  * p_v) {
-    assert(epi_idx < episode.size());
-    assert(IS_FILLING(episode[epi_idx].inc));
+      const prob_t   * p_p) {
+    qassert(epi_idx < episode.size());
+    qassert(IS_FILLING(episode[epi_idx].inc));
     episode[epi_idx].data.memcpy_back(nullptr); // push_back an empty entry, which will be filled later
     auto& entry = episode[epi_idx].data[ episode[epi_idx].data.size()-1 ]; // last one
-    entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v);
+    entry.from_memory(this, 0, p_s, p_a, p_r, p_p, nullptr);
   }
 
   /**
@@ -341,7 +359,7 @@ public:
       value_t  * next_v,
       bool finished_episodes_only = true, unsigned interval = 1) {
     if(episode.size() == 0) {
-      fprintf(stderr, "get_batch() failed as ReplayMemory is empty.\n");
+      qlog_warning("get_batch() failed as the ReplayMemory is empty.\n");
       return false;
     }
     for(size_t i=0; i<batch_size; i++) {
@@ -358,9 +376,11 @@ public:
           epi_idx = (epi_idx + 1) % episode.size();
       }
       if(attempt==episode.size()) {
-        fprintf(stderr, "get_batch() failed. This may due to a large interval (%u) used.\n", interval);
-        if(finished_episodes_only)
-          fprintf(stderr, "Or due to all episodes are currently filling, as finished_episodes_only is set to '%d'\n",
+        qlog_warning("get_batch() failed.\n"
+            "This may due to a large interval(%u) used comparing to episodes' lengths (this:%lu).\n",
+            interval, episode[epi_idx].size());
+        if(finished_episodes_only and IS_FILLING(episode[epi_idx].inc))
+          qlog_warning("Or due to all episodes are currently filling, as finished_episodes_only is set to '%d'\n",
               (int)finished_episodes_only);
         return false;
       }
@@ -377,37 +397,39 @@ public:
     return true;
   }
 
-  #define MODE_CONN 0 // use zmq_connect()
-  #define MODE_BIND 1 // use zmq_bind()
+  enum Mode {
+    Conn = 0,
+    Bind = 1,
+  };
 
   static void pull_thread_main(
       ReplayMemory * prm,
       void * ctx,
       const char * endpoint,
-      int mode)
+      Mode mode)
   {
-    void * soc = zmq_socket(ctx, ZMQ_PULL); assert(soc);
-    if(mode == MODE_BIND)
+    void * soc = zmq_socket(ctx, ZMQ_PULL); qassert(soc);
+    if(mode == Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
-    else if(mode == MODE_CONN)
+    else if(mode == Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int buf_size = prm->pushbuf_size();
-    char * buf = (char*)malloc(buf_size); assert(buf);
+    char * buf = (char*)malloc(buf_size); qassert(buf);
     Message * args = reinterpret_cast<Message*>(buf);
     int size;
-    while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); assert(size <= buf_size);
+    while(true) { // TODO
+      ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); qassert(size <= buf_size);
       if(args->type == Message::AddEpisode) {
         size_t epi_idx = prm->new_episode();
         prm->episode[epi_idx].data.reserve(args->length);
         size_t expected_size = prm->entry_size * args->length;
         ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].data.data(), expected_size, 0));
-        assert(size == expected_size);
+        qassert(size == expected_size);
         prm->episode[epi_idx].data.set_size(args->length);
         prm->close_episode(epi_idx);
       }
       else
-        assert(false && "Unknown args->type");
+        qthrow("Unknown args->type");
     }
     // never
     free(buf);
@@ -418,22 +440,22 @@ public:
       ReplayMemory * prm,
       void * ctx,
       const char * endpoint,
-      int mode)
+      Mode mode)
   {
-    void * soc = zmq_socket(ctx, ZMQ_REP); assert(soc);
-    if(mode == MODE_BIND)
+    void * soc = zmq_socket(ctx, ZMQ_REP); qassert(soc);
+    if(mode == Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
-    else if(mode == MODE_CONN)
+    else if(mode == Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int reqbuf_size = prm->reqbuf_size();
-    char * reqbuf = (char*)malloc(reqbuf_size); assert(reqbuf);
+    char * reqbuf = (char*)malloc(reqbuf_size); qassert(reqbuf);
     int repbuf_size = prm->repbuf_size();
-    char * repbuf = (char*)malloc(repbuf_size); assert(repbuf);
+    char * repbuf = (char*)malloc(repbuf_size); qassert(repbuf);
     Message * args = reinterpret_cast<Message*>(reqbuf);
     Message * rets = reinterpret_cast<Message*>(repbuf);
     int size;
-    while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, reqbuf, reqbuf_size, 0)); assert(size <= reqbuf_size);
+    while(true) { // TODO
+      ZMQ_CALL(size = zmq_recv(soc, reqbuf, reqbuf_size, 0)); qassert(size <= reqbuf_size);
       if(args->type == Message::GetSizes) {
         // return sizes
         rets->type = Message::Success;
@@ -446,7 +468,7 @@ public:
         ZMQ_CALL(zmq_send(soc, repbuf, sizeof(Message) + 5*sizeof(size_t), 0));
       }
       else
-        assert(false && "Unknown args->type");
+        qthrow("Unknown args->type");
     }
     // never
     free(reqbuf);
@@ -461,8 +483,8 @@ public:
       int back_soc_type,
       const char * back_endpoint)
   {
-    void * front = zmq_socket(ctx, front_soc_type); assert(front);
-    void * back  = zmq_socket(ctx,  back_soc_type); assert(back);
+    void * front = zmq_socket(ctx, front_soc_type); qassert(front);
+    void * back  = zmq_socket(ctx,  back_soc_type); qassert(back);
     ZMQ_CALL(zmq_bind(front, front_endpoint));
     ZMQ_CALL(zmq_bind(back, back_endpoint));
     ZMQ_CALL(zmq_proxy(front, back, nullptr));
