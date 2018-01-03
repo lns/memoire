@@ -235,6 +235,8 @@ public:
     printf("max_episode: %lu\n", max_episode);
   }
 
+  size_t num_episode() const { return episode.size(); }
+
   /**
    * Get index of a new episode
    * @return index of an episode just opened
