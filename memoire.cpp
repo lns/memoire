@@ -1,14 +1,23 @@
-#pragma once
-
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
+#include <cstdio>
 #include "replay_memory.hpp"
 #include "server.hpp"
 #include "client.hpp"
 
 namespace py = pybind11;
 using namespace py::literals;
+
+namespace backward {
+  backward::SignalHandling sh;
+}
+
+static void print_logo() __attribute__((constructor));
+
+void print_logo() {
+  fprintf(stderr, " Memoire, ver 17.10.20, built on %s.\n",__DATE__);
+}
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
 
@@ -38,7 +47,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("print_info", &RM::print_info)
     .def("num_episode", &RM::num_episode)
     .def("new_episode", &RM::new_episode)
-    .def("close_episode", &RM::close_episode, "epi_idx"_a)
+    .def("close_episode", &RM::close_episode, "epi_idx"_a, "do_update_value"_a = true)
     .def("clear", &RM::clear)
     .def("add_entry", [](RM& rem,
           size_t epi_idx,

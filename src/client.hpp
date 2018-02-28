@@ -59,7 +59,7 @@ public:
   void push_episode_to_remote(int epi_idx) {
     push->type = Message::AddEpisode;
     push->length = prm->episode[epi_idx].size();
-    ZMQ_CALL(zmq_send(ppsoc, pushbuf, sizeof(Message), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(ppsoc, pushbuf, pushbuf_size, ZMQ_SNDMORE));
     size_t send_size = prm->entry_size * push->length;
     ZMQ_CALL(zmq_send(ppsoc, prm->episode[epi_idx].data.data(), send_size, 0));
   }
@@ -69,7 +69,7 @@ protected:
     if(prm)
       delete prm;
     req->type = Message::GetSizes;
-    ZMQ_CALL(zmq_send(rrsoc, reqbuf, sizeof(Message), 0));
+    ZMQ_CALL(zmq_send(rrsoc, reqbuf, reqbuf_size, 0));
     ZMQ_CALL(zmq_recv(rrsoc, repbuf, repbuf_size, 0));
     qassert(rep->type == Message::Success);
     // Get sizes

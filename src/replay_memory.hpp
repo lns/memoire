@@ -275,11 +275,12 @@ public:
    * Close an episode (by setting its flag to `Filled`)
    * @param epi_idx  index of the episode (should be opened)
    */
-  void close_episode(size_t epi_idx) {
+  void close_episode(size_t epi_idx, bool do_update_value = true) {
     qassert(epi_idx < episode.size());
     uint64_t loaded = episode[epi_idx].inc;
     qassert(IS_FILLING(loaded));
-    episode[epi_idx].update_value();
+    if(do_update_value)
+      episode[epi_idx].update_value();
     qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
   }
 
@@ -428,7 +429,7 @@ public:
         ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].data.data(), expected_size, 0));
         qassert(size == expected_size);
         prm->episode[epi_idx].data.set_size(args->length);
-        prm->close_episode(epi_idx);
+        prm->close_episode(epi_idx, false);
       }
       else
         qthrow("Unknown args->type");

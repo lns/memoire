@@ -26,9 +26,9 @@ LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
 all: memoire.so
 
-memoire.so: $(ROOT)/src/libmemoire.cpp $(ROOT)/src/*
+memoire.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
 	$(CXX) $(CXXFLAGS) -fPIC -shared $(INCLUDES) -o $@ $< $(LDFLAGS)
-	scp $@ root@10.240.126.69:/data1/qing/memoire/
+	#scp $@ root@10.240.126.69:/data1/qing/memoire/
 
 clean:
 	-rm -f memoire.so
