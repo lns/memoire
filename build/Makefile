@@ -2,7 +2,6 @@
 
 ROOT=..
 ENABLE_DEBUG=1
-PYTHON_VERSION=2 # python2.* or python3.*
 
 CXX=g++
 CXXFLAGS=-std=c++11 -O2 -Wall -D_GLIBCXX_USE_CXX11_ABI=0 -g
@@ -15,20 +14,21 @@ else
 	BACKWARD_LD=
 endif
 
-ifeq ($(PYTHON_VERSION),3)
-	PYINC=`python3.4 -m pybind11 --includes`
-else
-	PYINC=`python -m pybind11 --includes`
-endif
+PY27INC=`python -m pybind11 --includes`
+PY34INC=`python3.4 -m pybind11 --includes`
+PY36INC=-I$(ROOT)/include/python3.6m
 
-INCLUDES=$(BACKWARD_MACRO) $(PYINC) -I$(ROOT)/src -I$(HOME)/include
+INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(HOME)/include
 LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
-all: memoire.so
+all: memoire.py27.so memoire.py36.so
 
-memoire.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
-	$(CXX) $(CXXFLAGS) -fPIC -shared $(INCLUDES) -o $@ $< $(LDFLAGS)
+memoire.py27.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
+	$(CXX) $(CXXFLAGS) -fPIC -shared $(PY27INC) $(INCLUDES) -o $@ $< $(LDFLAGS)
 	#scp $@ root@10.240.126.69:/data1/qing/memoire/
+
+memoire.py36.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
+	$(CXX) $(CXXFLAGS) -fPIC -shared $(PY36INC) $(INCLUDES) -o $@ $< $(LDFLAGS)
 
 clean:
 	-rm -f memoire.so

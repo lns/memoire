@@ -5,9 +5,10 @@
 #include "qlog.hpp"
 #include "array_view.hpp"
 #include "vector.hpp"
-#include "rng.hpp"
+#include "qrand.hpp"
 #include <signal.h>
 #include "utils.hpp" // non_copyable
+#include "prt_tree.hpp"
 
 template<typename state_t, typename action_t, typename reward_t>
 class ReplayMemory
@@ -76,7 +77,8 @@ public:
         const action_t * p_a,
         const reward_t * p_r,
         const prob_t   * p_p,
-        const value_t  * p_v) {
+        const value_t  * p_v)
+    {
       if(p_s)
         state(p).from_memory(p_s + index * p->state_size);
       if(p_a)
@@ -98,7 +100,8 @@ public:
         action_t * p_a,
         reward_t * p_r,
         prob_t   * p_p,
-        value_t  * p_v) {
+        value_t  * p_v)
+    {
       if(p_s)
         state(p).to_memory(p_s + index * p->state_size);
       if(p_a)
@@ -133,7 +136,7 @@ public:
   };
 
   static int reqbuf_size()  { return sizeof(Message); }
-  static int repbuf_size()  { return sizeof(Message) + 5*sizeof(size_t); }
+  static int repbuf_size()  { return sizeof(Message) + 6*sizeof(size_t); }
   static int pushbuf_size() { return sizeof(Message); }
 
   /**
@@ -148,11 +151,13 @@ public:
     std::atomic<uint64_t> inc;
     // Actual data (owns the memory)
     Vector<T> data;
+    // Priority tree for weighted sampling
+    PrtTree prt;
 
     Episode(const ReplayMemory& replay_memory)
-      : rem{&replay_memory}, inc{0}, data{rem->entry_size} {}
+      : rem{&replay_memory}, inc{0}, data{rem->entry_size}, prt{rem->rng, static_cast<int>(rem->epi_max_len)} {}
     Episode(Episode&& src) // for stl
-      : rem{src.rem}, inc{src.inc.load()}, data{src.data} {}
+      : rem{src.rem}, inc{src.inc.load()}, data{src.data}, prt{src.prt} {}
 
     void clear() { data.clear(); }
 
@@ -161,7 +166,8 @@ public:
     /**
      * Update value when episode is finished
      */
-    void update_value() {
+    void update_value()
+    {
       if(rem->value_size==0 or data.size()==0)
         return;
       assert(rem->value_size == rem->reward_size);
@@ -199,10 +205,17 @@ public:
 
   const size_t entry_size;           ///< size of each entry (in bytes)
   const size_t max_episode;          ///< Max episode
+  const size_t epi_max_len;          ///< Max length for an episode (used by Episode::prt)
   std::vector<Episode> episode;      ///< Episodes
   std::mutex episode_mutex;          ///< mutex for new/close an episode
+  PrtTree prt_epi;                   ///< Priority tree for sampling episodes
+  std::mutex prt_epi_mutex;          ///< mutex for new/close an episode
+
+  qlib::RNG * rng;                   ///< Random Number Generator
 
   float discount_factor;             ///< discount factor for calculate R with rewards
+  int pre_skip;                      ///< # of entries skipped at the begining for each episode
+  int post_skip;                     ///< # of entries skipped at the end for each episode
 
   /**
    * Construct a new replay memory
@@ -214,25 +227,36 @@ public:
       size_t r_size,
       size_t p_size,
       size_t v_size,
-      size_t max_epi) :
+      size_t max_epi,
+      size_t episode_max_length,
+      qlib::RNG * prt_rng) :
     state_size{s_size},
     action_size{a_size},
     reward_size{r_size},
     prob_size{p_size},
     value_size{v_size},
     entry_size{T::nbytes(this)},
-    max_episode{max_epi}
+    max_episode{max_epi},
+    epi_max_len{episode_max_length},
+    prt_epi{prt_rng, static_cast<int>(max_epi)},
+    rng{prt_rng},
+    pre_skip{0},
+    post_skip{1}
   {
     episode.reserve(max_episode);
   }
 
-  void print_info() const {
+  void print_info() const
+  {
     printf("state_size:  %lu\n", state_size);
     printf("action_size: %lu\n", action_size);
     printf("reward_size: %lu\n", reward_size);
     printf("prob_size:   %lu\n", prob_size);
     printf("value_size:  %lu\n", value_size);
     printf("max_episode: %lu\n", max_episode);
+    printf("epi_max_len: %lu\n", epi_max_len);
+    printf("pre_skip:    %d\n", pre_skip);
+    printf("post_skip:   %d\n", post_skip);
   }
 
   size_t num_episode() const { return episode.size(); }
@@ -241,7 +265,8 @@ public:
    * Get index of a new episode
    * @return index of an episode just opened
    */
-  size_t new_episode() {
+  size_t new_episode()
+  {
     for(int attempt=0; attempt<2; attempt++) {
       if(episode.size() < max_episode) {
         // Use a new episode
@@ -253,10 +278,9 @@ public:
         episode[idx].inc++; // filled -> filling
         return idx;
       } else {
-        // Reuse an old episode
-        std::uniform_int_distribution<size_t> dis(0, episode.size()-1);
+        // Reuse an old episode: 
         for(int i=0; i<128; i++) { // TODO: 128 attempts
-          size_t idx = dis(g_rng);
+          size_t idx = prt_epi.sample_reversely();
           uint64_t loaded = episode[idx].inc;
           if(IS_FILLED(loaded)) {
             if(not atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+1))
@@ -275,12 +299,24 @@ public:
    * Close an episode (by setting its flag to `Filled`)
    * @param epi_idx  index of the episode (should be opened)
    */
-  void close_episode(size_t epi_idx, bool do_update_value = true) {
+  void close_episode(size_t epi_idx, bool do_update_value = true, bool do_update_weight = true)
+  {
     qassert(epi_idx < episode.size());
     uint64_t loaded = episode[epi_idx].inc;
     qassert(IS_FILLING(loaded));
     if(do_update_value)
       episode[epi_idx].update_value();
+    // Update prt and prt_epi
+    for(int i=0; i<pre_skip; i++)
+      episode[epi_idx].prt.set_weight_without_update(i, 0.0);
+    for(int i=0; i<post_skip; i++)
+      episode[epi_idx].prt.set_weight_without_update(episode[epi_idx].size()-1-i, 0.0);
+    if(do_update_weight)
+      episode[epi_idx].prt.update_all();
+    if(true) {
+      std::lock_guard<std::mutex> guard(prt_epi_mutex);
+      prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
+    }
     qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
   }
 
@@ -288,7 +324,8 @@ public:
    * Clear all `Filled` data
    * Filling episodes will remain valid
    */
-  void clear() {
+  void clear()
+  {
     for(auto&& each : episode) {
       uint64_t loaded = each.inc;
       if(IS_FILLING(loaded))
@@ -300,6 +337,10 @@ public:
       each.clear();
       qassert(atomic_compare_exchange_strong(&each.inc, &loaded, loaded+1));
     }
+    if(true) {
+      std::lock_guard<std::mutex> guard(prt_epi_mutex);
+      prt_epi.clear();
+    }
   }
 
   /**
@@ -310,7 +351,8 @@ public:
    * @param epi_idx  index of the episode (should be opened)
    * @param src      pointer to the entry
    */
-  void memcpy_back(size_t epi_idx, const T * src) {
+  void memcpy_back(size_t epi_idx, const T * src)
+  {
     qassert(epi_idx < episode.size());
     qassert(IS_FILLING(episode[epi_idx].inc));
     episode[epi_idx].data.memcpy_back(src);
@@ -325,17 +367,23 @@ public:
    * @param p_r     pointer to reward (can be nullptr to be omitted)
    * @param p_p     pointer to prob (can be nullptr to be omitted)
    * @param p_v     pointer to value (can be nullptr to be omitted)
+   * @param weight  sample weight (priority)
    */
   void add_entry(size_t epi_idx,
       const state_t  * p_s,
       const action_t * p_a,
       const reward_t * p_r,
-      const prob_t   * p_p) {
+      const prob_t   * p_p,
+      float weight)
+  {
     qassert(epi_idx < episode.size());
     qassert(IS_FILLING(episode[epi_idx].inc));
     episode[epi_idx].data.memcpy_back(nullptr); // push_back an empty entry, which will be filled later
-    auto& entry = episode[epi_idx].data[ episode[epi_idx].data.size()-1 ]; // last one
+    int entry_idx = episode[epi_idx].data.size() - 1; // last one
+    auto& entry = episode[epi_idx].data[entry_idx]; 
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, nullptr);
+    episode[epi_idx].prt.set_weight_without_update(entry_idx, weight);
+    qassert(episode[epi_idx].prt.get_weight(entry_idx) == weight);
   }
 
   /**
@@ -344,8 +392,6 @@ public:
    *  data[batch_size][data_size]
    *
    * @param batch_size             batch_size
-   * @param finished_episodes_only sample only from finished episodes, if set true (default true)
-   * @param interval               interval between prev state and next state (normally 1)
    *
    * @return true iff success
    */
@@ -360,44 +406,75 @@ public:
       reward_t * next_r,
       prob_t   * next_p,
       value_t  * next_v,
-      bool finished_episodes_only = true, unsigned interval = 1) {
+      int * epi_idx_arr,
+      int * entry_idx_arr,
+      uint64_t * epi_inc_arr,
+      float * entry_weight_arr)
+  {
     if(episode.size() == 0) {
       qlog_warning("get_batch() failed as the ReplayMemory is empty.\n");
       return false;
     }
     for(size_t i=0; i<batch_size; i++) {
-      int epi_idx = g_rng() % episode.size();
+      int epi_idx = prt_epi.sample_index();
       // choose an episode
       int attempt = 0;
       uint64_t loaded;
       for( ; attempt<episode.size(); attempt++) {
         loaded = episode[epi_idx].inc;
-        if(episode[epi_idx].size() > interval // we need prev state and next state
-            and (!finished_episodes_only or IS_FILLED(loaded)))
+        if(episode[epi_idx].size() > (pre_skip + post_skip)) // we need prev state and next state
           break;
         else
-          epi_idx = (epi_idx + 1) % episode.size();
+          epi_idx = prt_epi.sample_index();
       }
       if(attempt==episode.size()) {
         qlog_warning("get_batch() failed.\n"
-            "This may due to a large interval(%u) used comparing to episodes' lengths (this:%lu).\n",
-            interval, episode[epi_idx].size());
-        if(finished_episodes_only and IS_FILLING(episode[epi_idx].inc))
-          qlog_warning("Or due to all episodes are currently filling, as finished_episodes_only is set to '%d'\n",
-              (int)finished_episodes_only);
+            "This may due to a large pre_skip(%d) or post_skip(%d) used comparing to episodes' lengths (this:%lu).\n",
+            pre_skip, post_skip, episode[epi_idx].size());
         return false;
       }
       // choose an example
-      int pre_idx = g_rng() % (episode[epi_idx].size() - interval);
+      int pre_idx = episode[epi_idx].prt.sample_index();
+      assert(pre_idx >= pre_skip and pre_idx + post_skip < episode[epi_idx].size());
       // add to batch
       auto& prev_entry = episode[epi_idx].data[pre_idx];
       prev_entry.to_memory(this, i, prev_s, prev_a, prev_r, prev_p, prev_v);
-      auto& next_entry = episode[epi_idx].data[pre_idx + interval];
+      auto& next_entry = episode[epi_idx].data[pre_idx + post_skip];
       next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
+      if(epi_idx_arr)
+        epi_idx_arr[i] = epi_idx;
+      if(entry_idx_arr)
+        entry_idx_arr[i] = pre_idx;
+      if(epi_inc_arr)
+        epi_inc_arr[i] = loaded;
+      if(entry_weight_arr)
+        entry_weight_arr[i] = episode[epi_idx].prt.get_weight(pre_idx);
       if(loaded != episode[epi_idx].inc) // memory has been altered, redo this sample
         i--;
     }
     return true;
+  }
+
+  /**
+   * Update sample weight
+   */
+  void update_weight(size_t batch_size,
+      const int * epi_idx_arr,
+      const int * entry_idx_arr,
+      const uint64_t * epi_inc_arr,
+      const float * entry_weight_arr)
+  {
+    for(int i=0; i<batch_size; i++) {
+      int epi_idx = epi_idx_arr[i];
+      if(episode[epi_idx].inc != epi_inc_arr[i]) // mismatch, skip this one.
+        continue;
+      // Strictly speaking, this may conflict with new_episode() in parallel threads.
+      episode[epi_idx].prt.set_weight(entry_idx_arr[i], entry_weight_arr[i]);
+      if(true) {
+        std::lock_guard<std::mutex> guard(prt_epi_mutex);
+        prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
+      }
+    }
   }
 
   enum Mode {
@@ -405,6 +482,9 @@ public:
     Bind = 1,
   };
 
+  /**
+   * Responsible for receiving an episode and adding it to this replay memory
+   */
   static void pull_thread_main(
       ReplayMemory * prm,
       void * ctx,
@@ -429,7 +509,9 @@ public:
         ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].data.data(), expected_size, 0));
         qassert(size == expected_size);
         prm->episode[epi_idx].data.set_size(args->length);
-        prm->close_episode(epi_idx, false);
+        // Receive PRT
+        ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].prt.w_.data(), 2*prm->episode[epi_idx].prt.size_*sizeof(float), 0));
+        prm->close_episode(epi_idx, false, false);
       }
       else
         qthrow("Unknown args->type");
@@ -439,6 +521,9 @@ public:
     zmq_close(soc);
   }
 
+  /**
+   * Responsible for answering the request of GetSizes.
+   */
   static void rep_thread_main(
       ReplayMemory * prm,
       void * ctx,
@@ -468,7 +553,8 @@ public:
         p[2] = prm->reward_size;
         p[3] = prm->prob_size;
         p[4] = prm->value_size;
-        ZMQ_CALL(zmq_send(soc, repbuf, sizeof(Message) + 5*sizeof(size_t), 0));
+        p[5] = prm->epi_max_len;
+        ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
       else
         qthrow("Unknown args->type");
@@ -479,6 +565,9 @@ public:
     zmq_close(soc);
   }
 
+  /**
+   * Responsible for connecting multiple frontends and backends
+   */
   static void proxy_main(
       void * ctx,
       int front_soc_type,

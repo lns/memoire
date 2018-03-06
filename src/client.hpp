@@ -10,6 +10,7 @@ class ReplayMemoryClient : public non_copyable {
 public:
   typedef typename RM::Message Message;
 
+  qlib::LCG64 lcg64;
   RM * prm;
   void * ctx;
   void * rrsoc; // for request-reply
@@ -61,7 +62,8 @@ public:
     push->length = prm->episode[epi_idx].size();
     ZMQ_CALL(zmq_send(ppsoc, pushbuf, pushbuf_size, ZMQ_SNDMORE));
     size_t send_size = prm->entry_size * push->length;
-    ZMQ_CALL(zmq_send(ppsoc, prm->episode[epi_idx].data.data(), send_size, 0));
+    ZMQ_CALL(zmq_send(ppsoc, prm->episode[epi_idx].data.data(), send_size, ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(ppsoc, prm->episode[epi_idx].prt.w_.data(), 2*prm->episode[epi_idx].prt.size_*sizeof(float), 0));
   }
 
 protected:
@@ -74,7 +76,7 @@ protected:
     qassert(rep->type == Message::Success);
     // Get sizes
     size_t * p = reinterpret_cast<size_t*>(&rep->entry);
-    prm = new RM{p[0], p[1], p[2], p[3], p[4], max_capacity};
+    prm = new RM{p[0], p[1], p[2], p[3], p[4], max_capacity, p[5], &lcg64};
   }
 
 };

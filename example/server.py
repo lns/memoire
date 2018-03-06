@@ -7,8 +7,10 @@ from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
 sizes = (12,1,1,0,1)
-rem = ReplayMemory(*sizes, max_episode=64)
-rem.discount_factor = 1.0
+rem = ReplayMemory(*sizes, max_episode=8, episode_max_length=1024)
+#rem.discount_factor = 1.0 # not used
+rem.pre_skip = 0
+rem.post_skip = 1
 rem.print_info()
 
 server = ReplayMemoryServer(rem)
@@ -26,13 +28,19 @@ try:
   while True:
     time.sleep(3)
     try:
-      prev_e, next_e = rem.get_batch(4, True, 1)
+      prev_e, next_e, info = rem.get_batch(1)
     except RuntimeError: # get_batch() failed
       continue
     for each in prev_e:
       print each
     for each in next_e:
       print each
+    for each in info:
+      print each
+    epi_idx, entry_idx, epi_inc, entry_weight = info
+    print epi_idx, entry_idx, epi_inc, entry_weight
+    entry_weight.fill(0)
+    rem.update_weight(1, epi_idx, entry_idx, epi_inc, entry_weight)
   #time.sleep(86400 * 365)
 except KeyboardInterrupt:
   os.kill(os.getpid(), 9)
