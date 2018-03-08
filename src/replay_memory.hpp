@@ -390,6 +390,11 @@ public:
    * Get a batch of samples/transitions
    * Assuming the memory layout for data (state, action ..) as
    *  data[batch_size][data_size]
+   * 
+   * Suppose pre_skip = l, post_skip = k, this function will get a batch of
+   *
+   * s_{t-l}, s_{t-l+1}, ... , s_{t}  in prev_s, and
+   * s_{t+k}                          in next_s.
    *
    * @param batch_size             batch_size
    *
@@ -437,8 +442,10 @@ public:
       int pre_idx = episode[epi_idx].prt.sample_index();
       assert(pre_idx >= pre_skip and pre_idx + post_skip < episode[epi_idx].size());
       // add to batch
-      auto& prev_entry = episode[epi_idx].data[pre_idx];
-      prev_entry.to_memory(this, i, prev_s, prev_a, prev_r, prev_p, prev_v);
+      for(int j=pre_skip; j>=0; j--) {
+        auto& prev_entry = episode[epi_idx].data[pre_idx - j];
+        prev_entry.to_memory(this, (1+pre_skip)*i + (pre_skip - j), prev_s, prev_a, prev_r, prev_p, prev_v);
+      }
       auto& next_entry = episode[epi_idx].data[pre_idx + post_skip];
       next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
       if(epi_idx_arr)

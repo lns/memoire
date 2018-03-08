@@ -10,6 +10,9 @@ make
 ## Dependency
 ZeroMQ, google-test, pybind11, libbfd
 
+## Usage
+See `example/`
+
 ## Documentation
 (TODO) See source code
 

@@ -8,7 +8,7 @@ python client.py
 Experiment 2:
 ```bash
 python proxy.py &
-python server.py &
+python server2.py &
 python client.py
 ```
 

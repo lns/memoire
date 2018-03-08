@@ -1,15 +1,13 @@
 #!/usr/bin/env python
 
 import numpy as np
-import os
-import time
+import os, time
 from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
-sizes = (12,1,1,0,1)
+sizes = (1,1,1,0,1)
 rem = ReplayMemory(*sizes, max_episode=0)
-rem.discount_factor = 1.0
-rem.print_info()
+#rem.discount_factor = 1.0
 
 server = ReplayMemoryServer(rem)
 

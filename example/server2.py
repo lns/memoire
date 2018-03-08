@@ -15,11 +15,8 @@ batch_size = 4
 
 server = ReplayMemoryServer(rem)
 
-threads = []
-threads.append(Thread(target=server.pull_proxy_main, args=("tcp://*:5562", "inproc://pull_workers")))
-threads.append(Thread(target=server.rep_worker_main, args=("tcp://*:5561", Bind)))
 for i in range(4):
-  threads.append(Thread(target=server.pull_worker_main, args=("inproc://pull_workers", Conn)))
+  threads.append(Thread(target=server.pull_worker_main, args=("tcp://*:5563", Conn)))
 
 for th in threads:
   th.start()
