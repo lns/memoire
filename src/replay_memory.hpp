@@ -136,7 +136,7 @@ public:
   };
 
   static int reqbuf_size()  { return sizeof(Message); }
-  static int repbuf_size()  { return sizeof(Message) + 6*sizeof(size_t); }
+  static int repbuf_size()  { return sizeof(Message) + 8*sizeof(size_t); }
   static int pushbuf_size() { return sizeof(Message); }
 
   /**
@@ -286,6 +286,7 @@ public:
             if(not atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+1))
               continue;
             episode[idx].clear();
+            episode[idx].prt.clear();
             return idx;
           }
         }
@@ -306,13 +307,15 @@ public:
     qassert(IS_FILLING(loaded));
     if(do_update_value)
       episode[epi_idx].update_value();
-    // Update prt and prt_epi
-    for(int i=0; i<pre_skip; i++)
-      episode[epi_idx].prt.set_weight_without_update(i, 0.0);
-    for(int i=0; i<post_skip; i++)
-      episode[epi_idx].prt.set_weight_without_update(episode[epi_idx].size()-1-i, 0.0);
-    if(do_update_weight)
+    if(do_update_weight) {
+      // Update prt and prt_epi
+      for(int i=0; i<pre_skip; i++)
+        episode[epi_idx].prt.set_weight_without_update(i, 0.0);
+      for(int i=0; i<post_skip; i++)
+        episode[epi_idx].prt.set_weight_without_update(episode[epi_idx].size()-1-i, 0.0);
       episode[epi_idx].prt.update_all();
+      qlog_warning("length: %lu, weight_sum: %lf\n", episode[epi_idx].size(), episode[epi_idx].prt.get_weight_sum());
+    }
     if(true) {
       std::lock_guard<std::mutex> guard(prt_epi_mutex);
       prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
@@ -396,6 +399,10 @@ public:
    * s_{t-l}, s_{t-l+1}, ... , s_{t}  in prev_s, and
    * s_{t+k}                          in next_s.
    *
+   * for action, reward, logp and value, this function will get
+   * a_{t}                            in prev_a, and
+   * a_{t+k}                          in next_a.
+   *
    * @param batch_size             batch_size
    *
    * @return true iff success
@@ -424,27 +431,38 @@ public:
       int epi_idx = prt_epi.sample_index();
       // choose an episode
       int attempt = 0;
-      uint64_t loaded;
+      uint64_t loaded = 0;
       for( ; attempt<episode.size(); attempt++) {
-        loaded = episode[epi_idx].inc;
+        loaded = std::atomic_load_explicit(&episode[epi_idx].inc, std::memory_order_relaxed);
         if(episode[epi_idx].size() > (pre_skip + post_skip)) // we need prev state and next state
           break;
         else
           epi_idx = prt_epi.sample_index();
       }
+      std::atomic_thread_fence(std::memory_order_acquire);
       if(attempt==episode.size()) {
         qlog_warning("get_batch() failed.\n"
             "This may due to a large pre_skip(%d) or post_skip(%d) used comparing to episodes' lengths (this:%lu).\n",
             pre_skip, post_skip, episode[epi_idx].size());
+        qlog_info("attempt: %d, epi_idx: %d, epi_weight: %lf\n", attempt, epi_idx, prt_epi.get_weight(epi_idx));
         return false;
       }
       // choose an example
       int pre_idx = episode[epi_idx].prt.sample_index();
+      if(pre_idx < pre_skip or pre_idx + post_skip >= episode[epi_idx].size()) {// prt has been altered, redo this sample
+        qlog_warning("pre_idx: %d, weight: %lf, pre_skip: %d, post_skip: %d, episode[%d].size(): %lu\n",
+            pre_idx, episode[epi_idx].prt.get_weight(pre_idx), pre_skip, post_skip, epi_idx, episode[epi_idx].size());
+        //episode[epi_idx].prt.debug_print(pre_idx);
+        i--;
+        continue;
+      }
       assert(pre_idx >= pre_skip and pre_idx + post_skip < episode[epi_idx].size());
       // add to batch
       for(int j=pre_skip; j>=0; j--) {
         auto& prev_entry = episode[epi_idx].data[pre_idx - j];
-        prev_entry.to_memory(this, (1+pre_skip)*i + (pre_skip - j), prev_s, prev_a, prev_r, prev_p, prev_v);
+        prev_entry.to_memory(this, (1+pre_skip)*i + (pre_skip - j), prev_s, nullptr, nullptr, nullptr, nullptr);
+        if(j==0)
+          prev_entry.to_memory(this, i, nullptr, prev_a, prev_r, prev_p, prev_v);
       }
       auto& next_entry = episode[epi_idx].data[pre_idx + post_skip];
       next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
@@ -456,8 +474,12 @@ public:
         epi_inc_arr[i] = loaded;
       if(entry_weight_arr)
         entry_weight_arr[i] = episode[epi_idx].prt.get_weight(pre_idx);
-      if(loaded != episode[epi_idx].inc) // memory has been altered, redo this sample
+      uint64_t another_load = std::atomic_load_explicit(&episode[epi_idx].inc, std::memory_order_relaxed);
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if(loaded != another_load) {// memory has been altered, redo this sample
+        qlog_warning("memory has been altered, redo this sample.\n");
         i--;
+      }
     }
     return true;
   }
@@ -519,6 +541,9 @@ public:
         // Receive PRT
         ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].prt.w_.data(), 2*prm->episode[epi_idx].prt.size_*sizeof(float), 0));
         prm->close_episode(epi_idx, false, false);
+        qlog_info("Received episode[%lu] of length %lu, weight: %lf\n",
+            epi_idx, prm->episode[epi_idx].size(), prm->prt_epi.get_weight(epi_idx));
+        //prm->episode[epi_idx].prt.debug_print(prm->episode[epi_idx].prt.sample_index()); // for debug
       }
       else
         qthrow("Unknown args->type");
@@ -561,6 +586,8 @@ public:
         p[3] = prm->prob_size;
         p[4] = prm->value_size;
         p[5] = prm->epi_max_len;
+        p[6] = prm->pre_skip;
+        p[7] = prm->post_skip;
         ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
       else

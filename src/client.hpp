@@ -77,6 +77,8 @@ protected:
     // Get sizes
     size_t * p = reinterpret_cast<size_t*>(&rep->entry);
     prm = new RM{p[0], p[1], p[2], p[3], p[4], max_capacity, p[5], &lcg64};
+    prm->pre_skip = p[6];
+    prm->post_skip = p[7];
   }
 
 };
