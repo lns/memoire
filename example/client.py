@@ -15,7 +15,7 @@ s = np.ndarray((rem.state_size), dtype=np.float32)
 a = np.ndarray((rem.action_size), dtype=np.float32)
 r = np.ndarray((rem.reward_size), dtype=np.float32)
 
-for n_games in range(1000):
+for n_games in range(10):
   epi_idx = rem.new_episode()
   for step in range(1000):
     s.fill(n_games)

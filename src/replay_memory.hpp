@@ -214,8 +214,9 @@ public:
   qlib::RNG * rng;                   ///< Random Number Generator
 
   float discount_factor;             ///< discount factor for calculate R with rewards
-  int pre_skip;                      ///< # of entries skipped at the begining for each episode
-  int post_skip;                     ///< # of entries skipped at the end for each episode
+  int frame_stack;                   ///< Number of frames stacked for each state (default 1)
+  int multi_step;                    ///< Number of steps between prev and next (default 1)
+
 
   /**
    * Construct a new replay memory
@@ -240,8 +241,8 @@ public:
     epi_max_len{episode_max_length},
     prt_epi{prt_rng, static_cast<int>(max_epi)},
     rng{prt_rng},
-    pre_skip{0},
-    post_skip{1}
+    frame_stack{1},
+    multi_step{1}
   {
     episode.reserve(max_episode);
   }
@@ -255,8 +256,8 @@ public:
     printf("value_size:  %lu\n", value_size);
     printf("max_episode: %lu\n", max_episode);
     printf("epi_max_len: %lu\n", epi_max_len);
-    printf("pre_skip:    %d\n", pre_skip);
-    printf("post_skip:   %d\n", post_skip);
+    printf("frame_stack: %d\n",  frame_stack);
+    printf("multi_step:  %d\n",  multi_step);
   }
 
   size_t num_episode() const { return episode.size(); }
@@ -309,9 +310,10 @@ public:
       episode[epi_idx].update_value();
     if(do_update_weight) {
       // Update prt and prt_epi
-      for(int i=0; i<pre_skip; i++)
+      assert(frame_stack >= 1 and multi_step >= 1);
+      for(int i=0; i<(frame_stack-1); i++)
         episode[epi_idx].prt.set_weight_without_update(i, 0.0);
-      for(int i=0; i<post_skip; i++)
+      for(int i=0; i<multi_step; i++)
         episode[epi_idx].prt.set_weight_without_update(episode[epi_idx].size()-1-i, 0.0);
       episode[epi_idx].prt.update_all();
       qlog_warning("length: %lu, weight_sum: %lf\n", episode[epi_idx].size(), episode[epi_idx].prt.get_weight_sum());
@@ -394,14 +396,14 @@ public:
    * Assuming the memory layout for data (state, action ..) as
    *  data[batch_size][data_size]
    * 
-   * Suppose pre_skip = l, post_skip = k, this function will get a batch of
+   * Suppose frame_stack = l, multi_step = k, this function will get a batch of
    *
-   * s_{t-l}, s_{t-l+1}, ... , s_{t}  in prev_s, and
-   * s_{t+k}                          in next_s.
+   * s_{t-l},   s_{t-l+1},   ..., s_{t}    in prev_s, and
+   * s_{t+k-l}, s_{t+k-l+1}, ..., s_{t+k}  in next_s.
    *
    * for action, reward, logp and value, this function will get
-   * a_{t}                            in prev_a, and
-   * a_{t+k}                          in next_a.
+   * a_{t}                                 in prev_a, and
+   * a_{t+k}                               in next_a.
    *
    * @param batch_size             batch_size
    *
@@ -434,38 +436,42 @@ public:
       uint64_t loaded = 0;
       for( ; attempt<episode.size(); attempt++) {
         loaded = std::atomic_load_explicit(&episode[epi_idx].inc, std::memory_order_relaxed);
-        if(episode[epi_idx].size() > (pre_skip + post_skip)) // we need prev state and next state
+        if(episode[epi_idx].size() >= (frame_stack + multi_step)) // we need prev state and next state
           break;
         else
-          epi_idx = prt_epi.sample_index();
+          qlog_error("Episode too short. This should not happen.\n");
       }
       std::atomic_thread_fence(std::memory_order_acquire);
       if(attempt==episode.size()) {
         qlog_warning("get_batch() failed.\n"
-            "This may due to a large pre_skip(%d) or post_skip(%d) used comparing to episodes' lengths (this:%lu).\n",
-            pre_skip, post_skip, episode[epi_idx].size());
+            "This may due to a large frame_stack(%d) or multi_step(%d) used comparing to episodes' lengths (this:%lu).\n",
+            frame_stack, multi_step, episode[epi_idx].size());
         qlog_info("attempt: %d, epi_idx: %d, epi_weight: %lf\n", attempt, epi_idx, prt_epi.get_weight(epi_idx));
         return false;
       }
       // choose an example
       int pre_idx = episode[epi_idx].prt.sample_index();
-      if(pre_idx < pre_skip or pre_idx + post_skip >= episode[epi_idx].size()) {// prt has been altered, redo this sample
-        qlog_warning("pre_idx: %d, weight: %lf, pre_skip: %d, post_skip: %d, episode[%d].size(): %lu\n",
-            pre_idx, episode[epi_idx].prt.get_weight(pre_idx), pre_skip, post_skip, epi_idx, episode[epi_idx].size());
+      if(pre_idx < (frame_stack-1) or pre_idx + multi_step >= episode[epi_idx].size()) {// prt has been altered, redo this sample
+        qlog_warning("pre_idx: %d, weight: %lf, frame_stack: %d, multi_step: %d, episode[%d].size(): %lu\n",
+            pre_idx, episode[epi_idx].prt.get_weight(pre_idx), frame_stack, multi_step, epi_idx, episode[epi_idx].size());
         //episode[epi_idx].prt.debug_print(pre_idx);
         i--;
         continue;
       }
-      assert(pre_idx >= pre_skip and pre_idx + post_skip < episode[epi_idx].size());
+      assert(pre_idx >= (frame_stack-1) and pre_idx + multi_step < episode[epi_idx].size());
       // add to batch
-      for(int j=pre_skip; j>=0; j--) {
+      for(int j=frame_stack-1; j>=0; j--) {
         auto& prev_entry = episode[epi_idx].data[pre_idx - j];
-        prev_entry.to_memory(this, (1+pre_skip)*i + (pre_skip - j), prev_s, nullptr, nullptr, nullptr, nullptr);
+        prev_entry.to_memory(this, frame_stack*i + (frame_stack-1-j), prev_s, nullptr, nullptr, nullptr, nullptr);
         if(j==0)
           prev_entry.to_memory(this, i, nullptr, prev_a, prev_r, prev_p, prev_v);
       }
-      auto& next_entry = episode[epi_idx].data[pre_idx + post_skip];
-      next_entry.to_memory(this, i, next_s, next_a, next_r, next_p, next_v);
+      for(int j=frame_stack-1; j>=0; j--) {
+        auto& next_entry = episode[epi_idx].data[pre_idx - j + multi_step];
+        next_entry.to_memory(this, frame_stack*i + (frame_stack-1-j), next_s, nullptr, nullptr, nullptr, nullptr);
+        if(j==0)
+          next_entry.to_memory(this, i, nullptr, next_a, next_r, next_p, next_v);
+      }
       if(epi_idx_arr)
         epi_idx_arr[i] = epi_idx;
       if(entry_idx_arr)
@@ -586,8 +592,8 @@ public:
         p[3] = prm->prob_size;
         p[4] = prm->value_size;
         p[5] = prm->epi_max_len;
-        p[6] = prm->pre_skip;
-        p[7] = prm->post_skip;
+        p[6] = prm->frame_stack;
+        p[7] = prm->multi_step;
         ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
       else

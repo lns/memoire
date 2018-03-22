@@ -16,7 +16,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire, ver 18.03.07, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire, ver 18.03.22, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -35,8 +35,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
 
   py::class_<RM>(m, "ReplayMemory")
     .def_readwrite("discount_factor", &RM::discount_factor)
-    .def_readwrite("pre_skip", &RM::pre_skip)
-    .def_readwrite("post_skip", &RM::post_skip)
+    .def_readwrite("frame_stack", &RM::frame_stack)
+    .def_readwrite("multi_step", &RM::multi_step)
     .def_readonly("state_size", &RM::state_size)
     .def_readonly("action_size", &RM::action_size)
     .def_readonly("reward_size", &RM::reward_size)
@@ -86,13 +86,13 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         }, "epi_idx"_a, "state"_a, "action"_a, "reward"_a, "weight"_a)
     .def("get_batch", [](RM& rem,
           size_t batch_size) {
-        size_t stack_size = 1+rem.pre_skip;
+        size_t stack_size = rem.frame_stack;
         pyarr_float prev_s({batch_size, stack_size, rem.state_size});
-        pyarr_float prev_a({batch_size, stack_size, rem.action_size});
-        pyarr_float prev_r({batch_size, stack_size, rem.reward_size});
-        pyarr_float prev_p({batch_size, stack_size, rem.prob_size});
-        pyarr_float prev_v({batch_size, stack_size, rem.value_size});
-        pyarr_float next_s({batch_size, rem.state_size});
+        pyarr_float prev_a({batch_size, rem.action_size});
+        pyarr_float prev_r({batch_size, rem.reward_size});
+        pyarr_float prev_p({batch_size, rem.prob_size});
+        pyarr_float prev_v({batch_size, rem.value_size});
+        pyarr_float next_s({batch_size, stack_size, rem.state_size});
         pyarr_float next_a({batch_size, rem.action_size});
         pyarr_float next_r({batch_size, rem.reward_size});
         pyarr_float next_p({batch_size, rem.prob_size});
