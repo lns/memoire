@@ -55,7 +55,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         "value_size"_a,
         "max_episode"_a,
         "episode_max_length"_a)
-    .def("print_info", &RM::print_info)
+    .def("print_info", [](RM& rem) { rem.print_info(); })
     .def("num_episode", &RM::num_episode)
     .def("new_episode", &RM::new_episode)
     .def("close_episode", &RM::close_episode, "epi_idx"_a, "do_update_value"_a = true, "do_update_wieght"_a = true)

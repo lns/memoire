@@ -210,6 +210,7 @@ public:
   std::mutex episode_mutex;          ///< mutex for new/close an episode
   PrtTree prt_epi;                   ///< Priority tree for sampling episodes
   std::mutex prt_epi_mutex;          ///< mutex for new/close an episode
+  size_t tail_idx;                   ///< Index for inserting (See new_episode())
 
   qlib::RNG * rng;                   ///< Random Number Generator
 
@@ -240,6 +241,7 @@ public:
     max_episode{max_epi},
     epi_max_len{episode_max_length},
     prt_epi{prt_rng, static_cast<int>(max_epi)},
+    tail_idx{0},
     rng{prt_rng},
     frame_stack{1},
     multi_step{1}
@@ -247,17 +249,17 @@ public:
     episode.reserve(max_episode);
   }
 
-  void print_info() const
+  void print_info(FILE * f = stderr) const
   {
-    printf("state_size:  %lu\n", state_size);
-    printf("action_size: %lu\n", action_size);
-    printf("reward_size: %lu\n", reward_size);
-    printf("prob_size:   %lu\n", prob_size);
-    printf("value_size:  %lu\n", value_size);
-    printf("max_episode: %lu\n", max_episode);
-    printf("epi_max_len: %lu\n", epi_max_len);
-    printf("frame_stack: %d\n",  frame_stack);
-    printf("multi_step:  %d\n",  multi_step);
+    fprintf(f, "state_size:  %lu\n", state_size);
+    fprintf(f, "action_size: %lu\n", action_size);
+    fprintf(f, "reward_size: %lu\n", reward_size);
+    fprintf(f, "prob_size:   %lu\n", prob_size);
+    fprintf(f, "value_size:  %lu\n", value_size);
+    fprintf(f, "max_episode: %lu\n", max_episode);
+    fprintf(f, "epi_max_len: %lu\n", epi_max_len);
+    fprintf(f, "frame_stack: %d\n",  frame_stack);
+    fprintf(f, "multi_step:  %d\n",  multi_step);
   }
 
   size_t num_episode() const { return episode.size(); }
@@ -277,19 +279,34 @@ public:
         episode.emplace_back(*this);
         size_t idx = episode.size()-1;
         episode[idx].inc++; // filled -> filling
+        //qlog_info("New epi[%lu] = %lu\n", idx, episode[idx].inc.load());
         return idx;
       } else {
+        // For DEBUG
+        std::vector<std::tuple<size_t, uint64_t, bool>> rets;
         // Reuse an old episode: 
-        for(int i=0; i<128; i++) { // TODO: 128 attempts
-          size_t idx = prt_epi.sample_reversely();
+        for(int i=0; i<16; i++) { // TODO: number of attempts
+          tail_idx = (tail_idx + 1) % episode.size();
+          size_t idx = tail_idx;
+          //size_t idx = prt_epi.sample_reversely();
           uint64_t loaded = episode[idx].inc;
-          if(IS_FILLED(loaded)) {
-            if(not atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+1))
-              continue;
+          bool ret = false;
+          if(IS_FILLED(loaded))
+            ret = atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+1);
+          rets.push_back(std::make_tuple(idx, loaded, ret));
+          if(IS_FILLED(loaded) and ret) {
+            if(true) { // TODO: whether to set zero
+              std::lock_guard<std::mutex> guard(prt_epi_mutex);
+              prt_epi.set_weight(idx, 0.0);
+            }
             episode[idx].clear();
             episode[idx].prt.clear();
+            //qlog_info("Renew epi[%lu] = %lu\n", idx, episode[idx].inc.load());
             return idx;
           }
+        }
+        for(const auto& each : rets) {
+          fprintf(stderr, "rets: %lu %lu %d\n", std::get<0>(each), std::get<1>(each), std::get<2>(each));
         }
         qthrow("Cannot found available episode slot.");
       }
@@ -316,13 +333,15 @@ public:
       for(int i=0; i<multi_step; i++)
         episode[epi_idx].prt.set_weight_without_update(episode[epi_idx].size()-1-i, 0.0);
       episode[epi_idx].prt.update_all();
-      qlog_warning("length: %lu, weight_sum: %lf\n", episode[epi_idx].size(), episode[epi_idx].prt.get_weight_sum());
+      //qlog_warning("length: %lu, weight_sum: %lf\n", episode[epi_idx].size(), episode[epi_idx].prt.get_weight_sum());
     }
     if(true) {
       std::lock_guard<std::mutex> guard(prt_epi_mutex);
       prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
     }
+    //qlog_info("Closing epi[%lu] = %lu\n", epi_idx, loaded);
     qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
+    //qlog_info("Closed epi[%lu]: %lu\n", epi_idx, episode[epi_idx].inc.load());
   }
 
   /**
@@ -432,21 +451,13 @@ public:
     for(size_t i=0; i<batch_size; i++) {
       int epi_idx = prt_epi.sample_index();
       // choose an episode
-      int attempt = 0;
-      uint64_t loaded = 0;
-      for( ; attempt<episode.size(); attempt++) {
-        loaded = std::atomic_load_explicit(&episode[epi_idx].inc, std::memory_order_relaxed);
-        if(episode[epi_idx].size() >= (frame_stack + multi_step)) // we need prev state and next state
-          break;
-        else
-          qlog_error("Episode too short. This should not happen.\n");
-      }
+      uint64_t loaded = std::atomic_load_explicit(&episode[epi_idx].inc, std::memory_order_relaxed);
       std::atomic_thread_fence(std::memory_order_acquire);
-      if(attempt==episode.size()) {
+      if(prt_epi.get_weight(epi_idx) == 0.0) {
         qlog_warning("get_batch() failed.\n"
             "This may due to a large frame_stack(%d) or multi_step(%d) used comparing to episodes' lengths (this:%lu).\n",
             frame_stack, multi_step, episode[epi_idx].size());
-        qlog_info("attempt: %d, epi_idx: %d, epi_weight: %lf\n", attempt, epi_idx, prt_epi.get_weight(epi_idx));
+        qlog_info("epi_idx: %d, epi_weight: %lf\n", epi_idx, prt_epi.get_weight(epi_idx));
         return false;
       }
       // choose an example
@@ -547,8 +558,8 @@ public:
         // Receive PRT
         ZMQ_CALL(size = zmq_recv(soc, prm->episode[epi_idx].prt.w_.data(), 2*prm->episode[epi_idx].prt.size_*sizeof(float), 0));
         prm->close_episode(epi_idx, false, false);
-        qlog_info("Received episode[%lu] of length %lu, weight: %lf\n",
-            epi_idx, prm->episode[epi_idx].size(), prm->prt_epi.get_weight(epi_idx));
+        //qlog_info("Received episode[%lu] of length %lu, weight: %lf\n",
+        //    epi_idx, prm->episode[epi_idx].size(), prm->prt_epi.get_weight(epi_idx));
         //prm->episode[epi_idx].prt.debug_print(prm->episode[epi_idx].prt.sample_index()); // for debug
       }
       else
