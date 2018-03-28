@@ -66,24 +66,15 @@ PYBIND11_MODULE(memoire /* module name */, m) {
           pyarr_float a,
           pyarr_float r,
           pyarr_float p,
+          pyarr_float v,
           float weight) {
         qassert(s.size() == (long)rem.state_size);
         qassert(a.size() == (long)rem.action_size);
         qassert(r.size() == (long)rem.reward_size);
         qassert(p.size() == (long)rem.prob_size);
-        rem.add_entry(epi_idx, s.data(), a.data(), r.data(), p.data(), weight);
-        }, "epi_idx"_a, "state"_a, "action"_a, "reward"_a, "prob"_a, "weight"_a)
-    .def("add_entry", [](RM& rem,
-          size_t epi_idx,
-          pyarr_float s,
-          pyarr_float a,
-          pyarr_float r,
-          float weight) {
-        qassert(s.size() == (long)rem.state_size);
-        qassert(a.size() == (long)rem.action_size);
-        qassert(r.size() == (long)rem.reward_size);
-        rem.add_entry(epi_idx, s.data(), a.data(), r.data(), nullptr, weight);
-        }, "epi_idx"_a, "state"_a, "action"_a, "reward"_a, "weight"_a)
+        qassert(v.size() == (long)rem.value_size);
+        rem.add_entry(epi_idx, s.data(), a.data(), r.data(), p.data(), v.data(), weight);
+        }, "epi_idx"_a, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "weight"_a)
     .def("get_batch", [](RM& rem,
           size_t batch_size) {
         size_t stack_size = rem.frame_stack;

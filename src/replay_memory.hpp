@@ -165,6 +165,8 @@ public:
 
     /**
      * Update value when episode is finished
+     * 1. Update r as discounted future reward
+     * 2. Preserve v
      */
     void update_value()
     {
@@ -172,21 +174,13 @@ public:
         return;
       assert(rem->value_size == rem->reward_size);
       int i=data.size()-1;
-      if(true) { // last entry
-        auto prev_value = data[i].value(rem);
-        auto prev_reward = data[i].reward(rem);
-        for(int j=0; j<prev_value.size(); j++) { // OPTIMIZE:
-          prev_value[j] = prev_reward[j];
-        }
-      }
       i--;
       const auto& gamma = rem->discount_factor;
       for( ; i>=0; i--) {
-        auto prev_value = data[i].value(rem);
-        auto post_value = data[i+1].value(rem);
+        auto post_reward = data[i+1].reward(rem);
         auto prev_reward = data[i].reward(rem);
-        for(int j=0; j<prev_value.size(); j++) { // OPTIMIZE:
-          prev_value[j] = prev_reward[j] + gamma * post_value[j];
+        for(int j=0; j<prev_reward.size(); j++) { // OPTIMIZE:
+          prev_reward[j] += gamma * post_reward[j];
         }
       }
     }
@@ -398,6 +392,7 @@ public:
       const action_t * p_a,
       const reward_t * p_r,
       const prob_t   * p_p,
+      const value_t  * p_v,
       float weight)
   {
     qassert(epi_idx < episode.size());
@@ -405,7 +400,7 @@ public:
     episode[epi_idx].data.memcpy_back(nullptr); // push_back an empty entry, which will be filled later
     int entry_idx = episode[epi_idx].data.size() - 1; // last one
     auto& entry = episode[epi_idx].data[entry_idx]; 
-    entry.from_memory(this, 0, p_s, p_a, p_r, p_p, nullptr);
+    entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v);
     episode[epi_idx].prt.set_weight_without_update(entry_idx, weight);
     qassert(episode[epi_idx].prt.get_weight(entry_idx) == weight);
   }
