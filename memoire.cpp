@@ -34,9 +34,11 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire"; // TODO
 
   py::class_<RM>(m, "ReplayMemory")
-    .def_readwrite("discount_factor", &RM::discount_factor)
-    .def_readwrite("frame_stack", &RM::frame_stack)
-    .def_readwrite("multi_step", &RM::multi_step)
+    .def_readonly("discount_factor", &RM::discount_factor)
+    .def_readonly("priority_exponent", &RM::priority_exponent)
+    .def_readonly("lambda", &RM::lambda)
+    .def_readonly("frame_stack", &RM::frame_stack)
+    .def_readonly("multi_step", &RM::multi_step)
     .def_readonly("state_size", &RM::state_size)
     .def_readonly("action_size", &RM::action_size)
     .def_readonly("reward_size", &RM::reward_size)

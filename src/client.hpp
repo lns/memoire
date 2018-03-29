@@ -75,10 +75,15 @@ protected:
     ZMQ_CALL(zmq_recv(rrsoc, repbuf, repbuf_size, 0));
     qassert(rep->type == Message::Success);
     // Get sizes
-    size_t * p = reinterpret_cast<size_t*>(&rep->entry);
-    prm = new RM{p[0], p[1], p[2], p[3], p[4], max_capacity, p[5], &lcg64};
-    prm->frame_stack = p[6];
-    prm->multi_step  = p[7];
+    RM * p = reinterpret_cast<RM*>(&rep->entry);
+    prm = new RM{p->state_size, p->action_size, p->reward_size, p->prob_size, p->value_size,
+      max_capacity, p->epi_max_len, &lcg64};
+    // Sync parameters
+    prm->discount_factor = p->discount_factor;
+    prm->priority_exponent = p->priority_exponent;
+    prm->lambda = p->lambda;
+    prm->frame_stack = p->frame_stack;
+    prm->multi_step  = p->multi_step;
   }
 
 };

@@ -136,7 +136,7 @@ public:
   };
 
   static int reqbuf_size()  { return sizeof(Message); }
-  static int repbuf_size()  { return sizeof(Message) + 8*sizeof(size_t); }
+  static int repbuf_size()  { return sizeof(Message) + sizeof(ReplayMemory); }
   static int pushbuf_size() { return sizeof(Message); }
 
   /**
@@ -178,9 +178,10 @@ public:
       const auto& gamma = rem->discount_factor;
       for( ; i>=0; i--) {
         auto post_reward = data[i+1].reward(rem);
+        auto post_value = data[i+1].value(rem);
         auto prev_reward = data[i].reward(rem);
         for(int j=0; j<prev_reward.size(); j++) { // OPTIMIZE:
-          prev_reward[j] += gamma * post_reward[j];
+          prev_reward[j] += rem->lambda * gamma * post_reward[j] + (1-rem->lambda) * gamma * post_value[j];
         }
       }
     }
@@ -200,6 +201,13 @@ public:
   const size_t entry_size;           ///< size of each entry (in bytes)
   const size_t max_episode;          ///< Max episode
   const size_t epi_max_len;          ///< Max length for an episode (used by Episode::prt)
+
+  float discount_factor;             ///< discount factor for calculate R with rewards
+  float priority_exponent;           ///< exponent of priority term (default 0.5)
+  float lambda;                      ///< mixture factor for TD-lambda
+  int frame_stack;                   ///< Number of frames stacked for each state (default 1)
+  int multi_step;                    ///< Number of steps between prev and next (default 1)
+
   std::vector<Episode> episode;      ///< Episodes
   std::mutex episode_mutex;          ///< mutex for new/close an episode
   PrtTree prt_epi;                   ///< Priority tree for sampling episodes
@@ -207,10 +215,6 @@ public:
   size_t tail_idx;                   ///< Index for inserting (See new_episode())
 
   qlib::RNG * rng;                   ///< Random Number Generator
-
-  float discount_factor;             ///< discount factor for calculate R with rewards
-  int frame_stack;                   ///< Number of frames stacked for each state (default 1)
-  int multi_step;                    ///< Number of steps between prev and next (default 1)
 
 
   /**
@@ -234,11 +238,12 @@ public:
     entry_size{T::nbytes(this)},
     max_episode{max_epi},
     epi_max_len{episode_max_length},
+    priority_exponent{0.5},
+    frame_stack{1},
+    multi_step{1},
     prt_epi{prt_rng, static_cast<int>(max_epi)},
     tail_idx{0},
-    rng{prt_rng},
-    frame_stack{1},
-    multi_step{1}
+    rng{prt_rng}
   {
     episode.reserve(max_episode);
   }
@@ -252,6 +257,9 @@ public:
     fprintf(f, "value_size:  %lu\n", value_size);
     fprintf(f, "max_episode: %lu\n", max_episode);
     fprintf(f, "epi_max_len: %lu\n", epi_max_len);
+    fprintf(f, "discount_f:  %lf\n", discount_factor);
+    fprintf(f, "priority_e:  %lf\n", priority_exponent);
+    fprintf(f, "lambda:      %lf\n", lambda);
     fprintf(f, "frame_stack: %d\n",  frame_stack);
     fprintf(f, "multi_step:  %d\n",  multi_step);
   }
@@ -326,6 +334,18 @@ public:
         episode[epi_idx].prt.set_weight_without_update(i, 0.0);
       for(int i=0; i<multi_step; i++)
         episode[epi_idx].prt.set_weight_without_update(episode[epi_idx].size()-1-i, 0.0);
+      // Update priority
+      //float gg = pow(discount_factor, multi_step);
+      for(int i=(frame_stack-1); i<episode[epi_idx].size()-multi_step; i++) {
+        auto& prev = episode[epi_idx].data[i];
+        //auto& next = episode[epi_idx].data[i+multi_step];
+        // R is computed with TD-lambda, while V is original value in prediction
+        // TODO: We only consider the first dimension of reward here
+        float priority = (prev.reward(this)[0] - prev.value(this)[0]);
+        //float priority = (prev.reward(this)[0] - gg*next.reward(this)[0]) - prev.value(this)[0] + gg*next.value(this)[0];
+        priority = pow(fabs(priority), priority_exponent);
+        episode[epi_idx].prt.set_weight_without_update(i, episode[epi_idx].prt.get_weight(i) * priority);
+      }
       episode[epi_idx].prt.update_all();
       //qlog_warning("length: %lu, weight_sum: %lf\n", episode[epi_idx].size(), episode[epi_idx].prt.get_weight_sum());
     }
@@ -591,15 +611,9 @@ public:
       if(args->type == Message::GetSizes) {
         // return sizes
         rets->type = Message::Success;
-        size_t * p = reinterpret_cast<size_t *>(&rets->entry);
-        p[0] = prm->state_size;
-        p[1] = prm->action_size;
-        p[2] = prm->reward_size;
-        p[3] = prm->prob_size;
-        p[4] = prm->value_size;
-        p[5] = prm->epi_max_len;
-        p[6] = prm->frame_stack;
-        p[7] = prm->multi_step;
+        ReplayMemory * p = reinterpret_cast<ReplayMemory *>(&rets->entry);
+        // memcpy. Only primary objects are valid.
+        memcpy(p, prm, sizeof(ReplayMemory));
         ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
       else
