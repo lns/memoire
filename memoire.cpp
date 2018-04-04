@@ -22,9 +22,9 @@ void print_logo() {
 typedef py::array_t<float, py::array::c_style> pyarr_float;
 typedef py::array_t<int, py::array::c_style> pyarr_int;
 typedef py::array_t<uint64_t, py::array::c_style> pyarr_ulong;
-typedef py::array_t<char, py::array::c_style> pyarr_char;
+typedef py::array_t<uint8_t, py::array::c_style> pyarr_char;
 
-typedef ReplayMemory<float, float, float> RM;
+typedef ReplayMemory<uint8_t, float, float> RM;
 typedef ReplayMemoryClient<RM> RMC;
 typedef ReplayMemoryServer<RM> RMS;
 
@@ -64,7 +64,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("clear", &RM::clear)
     .def("add_entry", [](RM& rem,
           size_t epi_idx,
-          pyarr_float s,
+          pyarr_char s,
           pyarr_float a,
           pyarr_float r,
           pyarr_float p,
@@ -80,12 +80,12 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("get_batch", [](RM& rem,
           size_t batch_size) {
         size_t stack_size = rem.frame_stack;
-        pyarr_float prev_s({batch_size, stack_size, rem.state_size});
+        pyarr_char prev_s({batch_size, stack_size, rem.state_size});
         pyarr_float prev_a({batch_size, rem.action_size});
         pyarr_float prev_r({batch_size, rem.reward_size});
         pyarr_float prev_p({batch_size, rem.prob_size});
         pyarr_float prev_v({batch_size, rem.value_size});
-        pyarr_float next_s({batch_size, stack_size, rem.state_size});
+        pyarr_char next_s({batch_size, stack_size, rem.state_size});
         pyarr_float next_a({batch_size, rem.action_size});
         pyarr_float next_r({batch_size, rem.reward_size});
         pyarr_float next_p({batch_size, rem.prob_size});
