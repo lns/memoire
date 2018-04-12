@@ -529,7 +529,8 @@ public:
       int epi_idx = epi_idx_arr[i];
       if(episode[epi_idx].inc != epi_inc_arr[i]) // mismatch, skip this one.
         continue;
-      // Strictly speaking, this may conflict with new_episode() in parallel threads.
+      // TODO: Strictly speaking, this may conflict with new_episode() in parallel threads.
+      // Maybe we should use a mutex here to have a simple solution for all these synchronization problems.
       episode[epi_idx].prt.set_weight(entry_idx_arr[i], entry_weight_arr[i]);
       if(true) {
         std::lock_guard<std::mutex> guard(prt_epi_mutex);

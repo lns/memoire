@@ -16,7 +16,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire, ver 18.03.22, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire, ver 18.04.12, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -34,11 +34,11 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire"; // TODO
 
   py::class_<RM>(m, "ReplayMemory")
-    .def_readonly("discount_factor", &RM::discount_factor)
-    .def_readonly("priority_exponent", &RM::priority_exponent)
-    .def_readonly("lambda", &RM::lambda)
-    .def_readonly("frame_stack", &RM::frame_stack)
-    .def_readonly("multi_step", &RM::multi_step)
+    .def_readwrite("discount_factor", &RM::discount_factor)
+    .def_readwrite("priority_exponent", &RM::priority_exponent)
+    .def_readwrite("td_lambda", &RM::lambda)
+    .def_readwrite("frame_stack", &RM::frame_stack)
+    .def_readwrite("multi_step", &RM::multi_step)
     .def_readonly("state_size", &RM::state_size)
     .def_readonly("action_size", &RM::action_size)
     .def_readonly("reward_size", &RM::reward_size)

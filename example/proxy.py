@@ -6,8 +6,13 @@ from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
 sizes = (1,1,1,0,1)
-rem = ReplayMemory(*sizes, max_episode=0)
-#rem.discount_factor = 1.0
+rem = ReplayMemory(*sizes, max_episode=1, episode_max_length=1024)
+rem.discount_factor = 0.0
+rem.priority_exponent = 0.0
+rem.td_lambda = 1.0
+rem.frame_stack = 4
+rem.multi_step = 4
+rem.print_info()
 
 server = ReplayMemoryServer(rem)
 

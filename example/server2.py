@@ -7,7 +7,6 @@ from threading import Thread
 
 sizes = (1,1,1,0,1)
 rem = ReplayMemory(*sizes, max_episode=64, episode_max_length=1024)
-#rem.discount_factor = 1.0 # not used
 rem.frame_stack = 4
 rem.multi_step = 4
 rem.print_info()
@@ -15,8 +14,9 @@ batch_size = 4
 
 server = ReplayMemoryServer(rem)
 
+threads = []
 for i in range(4):
-  threads.append(Thread(target=server.pull_worker_main, args=("tcp://*:5563", Conn)))
+  threads.append(Thread(target=server.pull_worker_main, args=("tcp://localhost:5563", Conn)))
 
 for th in threads:
   th.start()

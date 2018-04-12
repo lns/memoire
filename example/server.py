@@ -7,7 +7,9 @@ from threading import Thread
 
 sizes = (1,1,1,0,1)
 rem = ReplayMemory(*sizes, max_episode=64, episode_max_length=1024)
-#rem.discount_factor = 1.0 # not used
+rem.discount_factor = 0.0
+rem.priority_exponent = 0.0
+rem.td_lambda = 1.0
 rem.frame_stack = 4
 rem.multi_step = 4
 rem.print_info()
