@@ -36,7 +36,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   py::class_<RM>(m, "ReplayMemory")
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("priority_exponent", &RM::priority_exponent)
-    .def_readwrite("td_lambda", &RM::lambda)
+    .def_readwrite("td_lambda", &RM::td_lambda)
     .def_readwrite("frame_stack", &RM::frame_stack)
     .def_readwrite("multi_step", &RM::multi_step)
     .def_readonly("state_size", &RM::state_size)

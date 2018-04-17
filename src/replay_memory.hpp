@@ -181,7 +181,7 @@ public:
         auto post_value = data[i+1].value(rem);
         auto prev_reward = data[i].reward(rem);
         for(int j=0; j<prev_reward.size(); j++) { // OPTIMIZE:
-          prev_reward[j] += rem->lambda * gamma * post_reward[j] + (1-rem->lambda) * gamma * post_value[j];
+          prev_reward[j] += rem->td_lambda * gamma * post_reward[j] + (1-rem->td_lambda) * gamma * post_value[j];
         }
       }
     }
@@ -204,7 +204,7 @@ public:
 
   float discount_factor;             ///< discount factor for calculate R with rewards
   float priority_exponent;           ///< exponent of priority term (default 0.5)
-  float lambda;                      ///< mixture factor for TD-lambda
+  float td_lambda;                   ///< mixture factor for TD-lambda
   int frame_stack;                   ///< Number of frames stacked for each state (default 1)
   int multi_step;                    ///< Number of steps between prev and next (default 1)
 
@@ -259,7 +259,7 @@ public:
     fprintf(f, "epi_max_len: %lu\n", epi_max_len);
     fprintf(f, "discount_f:  %lf\n", discount_factor);
     fprintf(f, "priority_e:  %lf\n", priority_exponent);
-    fprintf(f, "lambda:      %lf\n", lambda);
+    fprintf(f, "td_lambda:   %lf\n", td_lambda);
     fprintf(f, "frame_stack: %d\n",  frame_stack);
     fprintf(f, "multi_step:  %d\n",  multi_step);
   }

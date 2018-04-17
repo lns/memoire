@@ -81,7 +81,7 @@ protected:
     // Sync parameters
     prm->discount_factor = p->discount_factor;
     prm->priority_exponent = p->priority_exponent;
-    prm->lambda = p->lambda;
+    prm->td_lambda = p->td_lambda;
     prm->frame_stack = p->frame_stack;
     prm->multi_step  = p->multi_step;
   }
