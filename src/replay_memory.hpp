@@ -188,8 +188,17 @@ public:
 
   };
 
-  #define IS_FILLING(inc) ((inc)%2==1)
-  #define IS_FILLED(inc)  ((inc)%2==0)
+  /**
+   * State transition:
+   *
+   * new_episode():       (0) -> (2)
+   * close_episode():     (2) -> (4)
+   * update_priority():   (0) -> (1) -> (0)
+   */
+  #define IS_FILLED(inc)    ((inc)%4==0)
+  #define IS_UPDATING(inc)  ((inc)%4==1)
+  #define IS_FILLING(inc)   ((inc)%4==2)
+  #define IS_SAME_EPISODE(load_a, load_b) ((load_a)/2==(load_b)/2)
 
 public:
   const size_t state_size;           ///< num of state
@@ -280,11 +289,12 @@ public:
           continue;
         episode.emplace_back(*this);
         size_t idx = episode.size()-1;
-        episode[idx].inc++; // filled -> filling
+        qassert(IS_FILLED(episode[idx].inc));
+        episode[idx].inc += 2; // filled -> filling
         //qlog_info("New epi[%lu] = %lu\n", idx, episode[idx].inc.load());
         return idx;
       } else {
-        // For DEBUG
+        // TODO: For DEBUG
         std::vector<std::tuple<size_t, uint64_t, bool>> rets;
         // Reuse an old episode: 
         for(int i=0; i<16; i++) { // TODO: number of attempts
@@ -294,7 +304,7 @@ public:
           uint64_t loaded = episode[idx].inc;
           bool ret = false;
           if(IS_FILLED(loaded))
-            ret = atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+1);
+            ret = atomic_compare_exchange_strong(&episode[idx].inc, &loaded, loaded+2);
           rets.push_back(std::make_tuple(idx, loaded, ret));
           if(IS_FILLED(loaded) and ret) {
             if(true) { // TODO: whether to set zero
@@ -354,26 +364,27 @@ public:
       prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
     }
     //qlog_info("Closing epi[%lu] = %lu\n", epi_idx, loaded);
-    qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1));
+    qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+2));
     //qlog_info("Closed epi[%lu]: %lu\n", epi_idx, episode[epi_idx].inc.load());
   }
 
   /**
    * Clear all `Filled` data
    * Filling episodes will remain valid
+   * TODO: Currently not used
    */
   void clear()
   {
     for(auto&& each : episode) {
       uint64_t loaded = each.inc;
-      if(IS_FILLING(loaded))
+      if(not IS_FILLED(loaded))
         continue;
-      if(not atomic_compare_exchange_strong(&each.inc, &loaded, loaded+1)) // failed
+      if(not atomic_compare_exchange_strong(&each.inc, &loaded, loaded+2)) // failed
         continue;
-      loaded ++;
+      loaded += 2;
       // now filling
       each.clear();
-      qassert(atomic_compare_exchange_strong(&each.inc, &loaded, loaded+1));
+      qassert(atomic_compare_exchange_strong(&each.inc, &loaded, loaded+2));
     }
     if(true) {
       std::lock_guard<std::mutex> guard(prt_epi_mutex);
@@ -508,7 +519,7 @@ public:
         entry_weight_arr[i] = episode[epi_idx].prt.get_weight(pre_idx);
       uint64_t another_load = std::atomic_load_explicit(&episode[epi_idx].inc, std::memory_order_relaxed);
       std::atomic_thread_fence(std::memory_order_acquire);
-      if(loaded != another_load) {// memory has been altered, redo this sample
+      if(not IS_SAME_EPISODE(loaded,another_load)) {// memory has been altered, redo this sample
         qlog_warning("memory has been altered, redo this sample.\n");
         i--;
       }
@@ -527,15 +538,21 @@ public:
   {
     for(int i=0; i<batch_size; i++) {
       int epi_idx = epi_idx_arr[i];
-      if(episode[epi_idx].inc != epi_inc_arr[i]) // mismatch, skip this one.
+      uint64_t loaded = episode[epi_idx].inc;
+      if(not IS_FILLED(loaded))
         continue;
-      // TODO: Strictly speaking, this may conflict with new_episode() in parallel threads.
-      // Maybe we should use a mutex here to have a simple solution for all these synchronization problems.
-      episode[epi_idx].prt.set_weight(entry_idx_arr[i], entry_weight_arr[i]);
-      if(true) {
-        std::lock_guard<std::mutex> guard(prt_epi_mutex);
-        prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
+      bool ret = atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded+1);
+      if(not ret)
+        continue;
+      loaded += 1;
+      if(IS_SAME_EPISODE(loaded, epi_inc_arr[i])) {
+        episode[epi_idx].prt.set_weight(entry_idx_arr[i], entry_weight_arr[i]);
+        if(true) {
+          std::lock_guard<std::mutex> guard(prt_epi_mutex);
+          prt_epi.set_weight(epi_idx, episode[epi_idx].prt.get_weight_sum());
+        }
       }
+      qassert(atomic_compare_exchange_strong(&episode[epi_idx].inc, &loaded, loaded-1));
     }
   }
 
