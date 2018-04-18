@@ -223,6 +223,9 @@ public:
   std::mutex prt_epi_mutex;          ///< mutex for new/close an episode
   size_t tail_idx;                   ///< Index for inserting (See new_episode())
 
+  std::atomic<size_t> total_episodes;///< counter of total episodes
+  std::atomic<size_t> total_steps;   ///< counter of total steps
+
   qlib::RNG * rng;                   ///< Random Number Generator
 
 
@@ -252,6 +255,8 @@ public:
     multi_step{1},
     prt_epi{prt_rng, static_cast<int>(max_epi)},
     tail_idx{0},
+    total_episodes{0},
+    total_steps{0},
     rng{prt_rng}
   {
     episode.reserve(max_episode);
@@ -594,6 +599,9 @@ public:
         //qlog_info("Received episode[%lu] of length %lu, weight: %lf\n",
         //    epi_idx, prm->episode[epi_idx].size(), prm->prt_epi.get_weight(epi_idx));
         //prm->episode[epi_idx].prt.debug_print(prm->episode[epi_idx].prt.sample_index()); // for debug
+        // Update counters
+        prm->total_episodes += 1;
+        prm->total_steps += args->length;
       }
       else
         qthrow("Unknown args->type");

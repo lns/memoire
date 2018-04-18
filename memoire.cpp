@@ -47,6 +47,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("entry_size", &RM::entry_size)
     .def_readonly("max_episode", &RM::max_episode)
     .def_readonly("epi_max_len", &RM::epi_max_len)
+    .def_readonly("total_episodes", &RM::total_episodes)
+    .def_readonly("total_steps", &RM::total_steps)
     .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t me, size_t eml) {
             return std::unique_ptr<RM>(new RM(ss,as,rs,ps,vs,me,eml,&lcg64));
           }),
