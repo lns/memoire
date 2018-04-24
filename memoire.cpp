@@ -34,38 +34,56 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire"; // TODO
 
   py::class_<RM>(m, "ReplayMemory")
-    .def_readwrite("discount_factor", &RM::discount_factor)
-    .def_readwrite("priority_exponent", &RM::priority_exponent)
-    .def_readwrite("td_lambda", &RM::td_lambda)
-    .def_readwrite("frame_stack", &RM::frame_stack)
-    .def_readwrite("multi_step", &RM::multi_step)
     .def_readonly("state_size", &RM::state_size)
     .def_readonly("action_size", &RM::action_size)
     .def_readonly("reward_size", &RM::reward_size)
     .def_readonly("prob_size", &RM::prob_size)
     .def_readonly("value_size", &RM::value_size)
     .def_readonly("entry_size", &RM::entry_size)
-    .def_readonly("max_episode", &RM::max_episode)
-    .def_readonly("epi_max_len", &RM::epi_max_len)
-    .def_readonly("total_episodes", &RM::total_episodes)
-    .def_readonly("total_steps", &RM::total_steps)
-    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t me, size_t eml) {
-            return std::unique_ptr<RM>(new RM(ss,as,rs,ps,vs,me,eml,&lcg64));
+    .def_readonly("capacity", &RM::capacity)
+    .def_readwrite("discount_factor", &RM::discount_factor)
+    .def_readwrite("priority_exponent", &RM::priority_exponent)
+    .def_readwrite("td_lambda", &RM::td_lambda)
+    .def_readwrite("frame_stack", &RM::frame_stack)
+    .def_readwrite("multi_step", &RM::multi_step)
+    .def_readwrite("cache_size", &RM::cache_size)
+    .def_property("rwd_coeff",
+      [](RM& rm) {
+        py::list l;
+        for(int i=0; i<MAX_RWD_DIM; i++)
+          l.append(rm.rwd_coeff[i]);
+        return l;
+      },
+      [](RM& rm, py::list l) {
+        for(int i=0; i<MAX_RWD_DIM and i<(int)l.size(); i++)
+          rm.rwd_coeff[i] = py::cast<float>(l[i]);
+      })
+    .def_property("cache_flags",
+      [](RM& rm) {
+        py::list l;
+        for(int i=0; i<10; i++)
+          l.append(rm.cache_flags[i]);
+        return l;
+      },
+      [](RM& rm, py::list l) {
+        for(int i=0; i<10 and i<(int)l.size(); i++)
+          rm.cache_flags[i] = py::cast<uint8_t>(l[i]);
+      })
+    .def_readonly("uuid", &RM::uuid)
+    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t capa) {
+            return std::unique_ptr<RM>(new RM(ss,as,rs,ps,vs,capa,&lcg64));
           }),
         "state_size"_a,
         "action_size"_a,
         "reward_size"_a,
         "prob_size"_a,
         "value_size"_a,
-        "max_episode"_a,
-        "episode_max_length"_a)
+        "capacity"_a)
     .def("print_info", [](RM& rem) { rem.print_info(); })
     .def("num_episode", &RM::num_episode)
     .def("new_episode", &RM::new_episode)
-    .def("close_episode", &RM::close_episode, "epi_idx"_a, "do_update_value"_a = true, "do_update_wieght"_a = true)
-    .def("clear", &RM::clear)
+    .def("close_episode", &RM::close_episode, "do_update_value"_a = true, "do_update_wieght"_a = true)
     .def("add_entry", [](RM& rem,
-          size_t epi_idx,
           pyarr_char s,
           pyarr_float a,
           pyarr_float r,
@@ -77,59 +95,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         qassert(r.size() == (long)rem.reward_size);
         qassert(p.size() == (long)rem.prob_size);
         qassert(v.size() == (long)rem.value_size);
-        rem.add_entry(epi_idx, s.data(), a.data(), r.data(), p.data(), v.data(), weight);
-        }, "epi_idx"_a, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "weight"_a)
-    .def("get_batch", [](RM& rem,
-          size_t batch_size) {
-        size_t stack_size = rem.frame_stack;
-        pyarr_char prev_s({batch_size, stack_size, rem.state_size});
-        pyarr_float prev_a({batch_size, rem.action_size});
-        pyarr_float prev_r({batch_size, rem.reward_size});
-        pyarr_float prev_p({batch_size, rem.prob_size});
-        pyarr_float prev_v({batch_size, rem.value_size});
-        pyarr_char next_s({batch_size, stack_size, rem.state_size});
-        pyarr_float next_a({batch_size, rem.action_size});
-        pyarr_float next_r({batch_size, rem.reward_size});
-        pyarr_float next_p({batch_size, rem.prob_size});
-        pyarr_float next_v({batch_size, rem.value_size});
-        pyarr_int epi_idx_arr({batch_size,});
-        pyarr_int entry_idx_arr({batch_size,});
-        pyarr_ulong epi_inc_arr({batch_size,});
-        pyarr_float entry_weight_arr({batch_size,});
-        bool ret = rem.get_batch(batch_size,
-          prev_s.mutable_data(),
-          prev_a.mutable_data(),
-          prev_r.mutable_data(),
-          prev_p.mutable_data(),
-          prev_v.mutable_data(),
-          next_s.mutable_data(),
-          next_a.mutable_data(),
-          next_r.mutable_data(),
-          next_p.mutable_data(),
-          next_v.mutable_data(),
-          epi_idx_arr.mutable_data(),
-          entry_idx_arr.mutable_data(),
-          epi_inc_arr.mutable_data(),
-          entry_weight_arr.mutable_data());
-        if(not ret)
-          throw std::runtime_error("get_batch() failed.");
-        auto prev = std::make_tuple(prev_s, prev_a, prev_r, prev_p, prev_v);
-        auto next = std::make_tuple(next_s, next_a, next_r, next_p, next_v);
-        auto info = std::make_tuple(epi_idx_arr, entry_idx_arr, epi_inc_arr, entry_weight_arr);
-        return std::make_tuple(prev,next,info);
-      },"batch_size"_a)
-    .def("update_weight", [](RM& rem,
-          size_t batch_size,
-          pyarr_int epi_idx_arr,
-          pyarr_int entry_idx_arr,
-          pyarr_ulong epi_inc_arr,
-          pyarr_float entry_weight_arr) {
-        rem.update_weight(batch_size,
-          epi_idx_arr.data(),
-          entry_idx_arr.data(),
-          epi_inc_arr.data(),
-          entry_weight_arr.data());
-      },"batch_size"_a, "epi_idx_arr"_a, "entry_idx_arr"_a, "epi_inc_arr"_a, "entry_weight_arr"_a);
+        rem.add_entry(s.data(), a.data(), r.data(), p.data(), v.data(), weight);
+        }, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "weight"_a);
 
   py::enum_<typename RM::Mode>(m, "Mode", py::arithmetic())
     .value("Conn", RM::Conn)
@@ -137,15 +104,14 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .export_values();
 
   py::class_<RMC>(m, "ReplayMemoryClient")
-    .def(py::init<const char*, const char*, size_t>(), "req_endpoint"_a, "push_endpoint"_a, "rem_max_capacity"_a)
+    .def(py::init<const char*, const char*, size_t>(), "req_endpoint"_a, "push_endpoint"_a, "capacity"_a)
     .def_readonly("prm", &RMC::prm)
-    .def("push_episode_to_remote", [](RMC& c, int epi_idx) {
-        py::gil_scoped_release release;
-        c.push_episode_to_remote(epi_idx);
-        }, "epi_idx"_a);
+    .def("sync_sizes", &RMC::sync_sizes)
+    .def("update_counter", &RMC::update_counter)
+    .def("push_cache", &RMC::push_cache);
 
   py::class_<RMS>(m, "ReplayMemoryServer")
-    .def(py::init<RM*>(), "replay_memory"_a)
+    .def(py::init<RM*, int>(), "replay_memory"_a, "n_caches"_a)
     .def("rep_worker_main", [](RMS& s, const char * ep, typename RM::Mode m) {
         py::gil_scoped_release release;
         s.rep_worker_main(ep,m);
@@ -161,7 +127,40 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("pull_proxy_main", [](RMS& s, const char * f, const char * b) {
         py::gil_scoped_release release;
         s.pull_proxy_main(f,b);
-        }, "front_ep"_a, "back_ep"_a);
+        }, "front_ep"_a, "back_ep"_a)
+    .def("get_batch", [](RMS& s,
+          size_t batch_size) {
+        size_t stack_size = s.prm->frame_stack;
+        pyarr_char prev_s({batch_size, stack_size, s.prm->state_size});
+        pyarr_float prev_a({batch_size, s.prm->action_size});
+        pyarr_float prev_r({batch_size, s.prm->reward_size});
+        pyarr_float prev_p({batch_size, s.prm->prob_size});
+        pyarr_float prev_v({batch_size, s.prm->value_size});
+        pyarr_char next_s({batch_size, stack_size, s.prm->state_size});
+        pyarr_float next_a({batch_size, s.prm->action_size});
+        pyarr_float next_r({batch_size, s.prm->reward_size});
+        pyarr_float next_p({batch_size, s.prm->prob_size});
+        pyarr_float next_v({batch_size, s.prm->value_size});
+        pyarr_float entry_weight_arr({batch_size,});
+        bool ret = s.get_batch(batch_size,
+          prev_s.mutable_data(),
+          prev_a.mutable_data(),
+          prev_r.mutable_data(),
+          prev_p.mutable_data(),
+          prev_v.mutable_data(),
+          next_s.mutable_data(),
+          next_a.mutable_data(),
+          next_r.mutable_data(),
+          next_p.mutable_data(),
+          next_v.mutable_data(),
+          entry_weight_arr.mutable_data());
+        if(not ret)
+          throw std::runtime_error("get_batch() failed.");
+        auto prev = std::make_tuple(prev_s, prev_a, prev_r, prev_p, prev_v);
+        auto next = std::make_tuple(next_s, next_a, next_r, next_p, next_v);
+        auto info = std::make_tuple(entry_weight_arr);
+        return std::make_tuple(prev,next,info);
+      },"batch_size"_a);
 
 }
 
