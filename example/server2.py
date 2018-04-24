@@ -19,7 +19,7 @@ print(rem.cache_flags)
 rem.cache_flags = [1,1,1,0,1, 1,1,1,0,1]
 batch_size = 4
 
-server = ReplayMemoryServer(rem, n_caches=16)
+server = ReplayMemoryServer(rem, n_caches=4)
 
 threads = []
 for i in range(4):
