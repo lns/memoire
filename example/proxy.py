@@ -6,7 +6,7 @@ from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
 sizes = (1,1,1,0,1)
-rem = ReplayMemory(*sizes, capacity=1)
+rem = ReplayMemory(*sizes, capacity=0)
 rem.discount_factor = 0.0
 rem.priority_exponent = 0.0
 rem.td_lambda = 1.0

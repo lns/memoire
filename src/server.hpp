@@ -12,7 +12,6 @@ class ReplayMemoryServer : public non_copyable {
 public:
   typedef typename RM::Message Message;
   typedef typename RM::DataCache Cache;
-  typedef typename RM::reward_t reward_t;
 
   RM * prm;
   void * ctx;
@@ -118,7 +117,7 @@ public:
     Message * args = reinterpret_cast<Message*>(reqbuf);
     Message * rets = reinterpret_cast<Message*>(repbuf);
     int size;
-    while(true) { // TODO
+    while(true) {
       ZMQ_CALL(size = zmq_recv(soc, reqbuf, reqbuf_size, 0)); qassert(size <= reqbuf_size);
       rets->type = args->type;
       rets->sender = prm->uuid;
@@ -163,7 +162,7 @@ public:
     char * buf = (char*)malloc(buf_size); qassert(buf);
     Message * args = reinterpret_cast<Message*>(buf);
     int size;
-    while(true) { // TODO
+    while(true) {
       ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); qassert(size <= buf_size);
       if(args->type == Message::ProtocalCache) {
         int idx;

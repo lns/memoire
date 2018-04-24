@@ -138,13 +138,15 @@ public:
    */
   class DataSample : public non_copyable
   {
-    // TODO: DIVUP to 4 or larger
+    static size_t ceil(size_t a, size_t b) {
+      return (a+b-1) / b * b;
+    }
   public:
     static size_t prev_state_offset(const ReplayMemory * p) {
       return 0;
     }
     static size_t prev_action_offset(const ReplayMemory * p) {
-      return prev_state_offset(p)  + (p->cache_flags[0] ? p->frame_stack * p->state_size * sizeof(state_t) : 0);
+      return ceil(prev_state_offset(p), 4) + (p->cache_flags[0] ? p->frame_stack * p->state_size * sizeof(state_t) : 0);
     }
     static size_t prev_reward_offset(const ReplayMemory * p) {
       return prev_action_offset(p) + (p->cache_flags[1] ? p->action_size * sizeof(action_t) : 0);
@@ -159,7 +161,7 @@ public:
       return prev_value_offset(p)  + (p->cache_flags[4] ? p->value_size  * sizeof(value_t)  : 0);
     }
     static size_t next_action_offset(const ReplayMemory * p) {
-      return next_state_offset(p)  + (p->cache_flags[5] ? p->frame_stack * p->state_size * sizeof(state_t) : 0);
+      return ceil(next_state_offset(p), 4) + (p->cache_flags[5] ? p->frame_stack * p->state_size * sizeof(state_t) : 0);
     }
     static size_t next_reward_offset(const ReplayMemory * p) {
       return next_action_offset(p) + (p->cache_flags[6] ? p->action_size * sizeof(action_t) : 0);
