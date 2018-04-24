@@ -509,9 +509,10 @@ protected:
       long idx = (epi.offset + i) % capacity;
       auto& prev = data[idx];
       // R is computed with TD-lambda, while V is the original value in prediction
-      // TODO: We only consider the first dimension of reward here
-      float priority = (prev.reward(this)[0] - prev.value(this)[0]);
-      priority = pow(fabs(priority), priority_exponent);
+      float priority = 0;
+      for(int i=0; i<prev.reward(this).size(); i++)
+        priority += rwd_coeff[i] * fabs(prev.reward(this)[i] - prev.value(this)[i]);
+      priority = pow(priority, priority_exponent);
       prt.set_weight(idx, prt.get_weight(idx) * priority);
     }
   }
