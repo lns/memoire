@@ -47,6 +47,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("frame_stack", &RM::frame_stack)
     .def_readwrite("multi_step", &RM::multi_step)
     .def_readwrite("cache_size", &RM::cache_size)
+    .def_readwrite("max_episode", &RM::max_episode)
     .def_property("rwd_coeff",
       [](RM& rm) {
         py::list l;

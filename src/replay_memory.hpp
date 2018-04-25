@@ -349,6 +349,7 @@ public:
   int frame_stack;                   ///< Number of frames stacked for each state (default 1)
   int multi_step;                    ///< Number of steps between prev and next (default 1)
   int cache_size;                    ///< Cache size, number of sample in a cache
+  int max_episode;                   ///< Max number of stored episodes allowed (0 or neg for not checking)
   float rwd_coeff[MAX_RWD_DIM];      ///< rwd coefficient
   uint8_t cache_flags[10];           ///< Whether we should collect prev s,a,r,p,v and next s,a,r,p,v in caches
 
@@ -386,6 +387,7 @@ public:
     entry_size{T::nbytes(this)},
     capacity{capa},
     cache_size{0},
+    max_episode{0},
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(capacity)},
@@ -414,8 +416,10 @@ public:
     fprintf(f, "frame_stack:   %d\n",  frame_stack);
     fprintf(f, "multi_step:    %d\n",  multi_step);
     fprintf(f, "cache_size:    %d\n",  cache_size);
+    fprintf(f, "max_episode:   %d\n",  max_episode);
+    fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
-    fprintf(f, "sizes: %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu, %lu: %ld\n",
+    fprintf(f, "cache sizes: %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu, %lu: %ld\n",
         DataSample::prev_action_offset(this) - DataSample::prev_state_offset(this),
         DataSample::prev_reward_offset(this) - DataSample::prev_action_offset(this),
         DataSample::prev_prob_offset(this) - DataSample::prev_reward_offset(this),
@@ -540,6 +544,8 @@ public:
       std::lock_guard<std::mutex> guard(prt_mutex);
       update_weight(episode.back());
     }
+    while(max_episode > 0 and episode.size() > max_episode)
+      remove_oldest();
   }
 
   /**
