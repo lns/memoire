@@ -283,23 +283,23 @@ public:
         auto av = prev_value(p);
         av.to_memory(prev_v + idx * av.size());
       }
-      if(next_s and p->cache_flags[0]) {
+      if(next_s and p->cache_flags[5]) {
         auto av = next_state(p);
         av.to_memory(next_s + idx * av.size());
       }
-      if(next_a and p->cache_flags[1]) {
+      if(next_a and p->cache_flags[6]) {
         auto av = next_action(p);
         av.to_memory(next_a + idx * av.size());
       }
-      if(next_r and p->cache_flags[2]) {
+      if(next_r and p->cache_flags[7]) {
         auto av = next_reward(p);
         av.to_memory(next_r + idx * av.size());
       }
-      if(next_p and p->cache_flags[3]) {
+      if(next_p and p->cache_flags[8]) {
         auto av = next_prob(p);
         av.to_memory(next_p + idx * av.size());
       }
-      if(next_v and p->cache_flags[4]) {
+      if(next_v and p->cache_flags[9]) {
         auto av = next_value(p);
         av.to_memory(next_v + idx * av.size());
       }
@@ -415,18 +415,18 @@ public:
     fprintf(f, "multi_step:    %d\n",  multi_step);
     fprintf(f, "cache_size:    %d\n",  cache_size);
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
-    fprintf(f, "offsets: %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu, %lu, %lu\n",
-        DataSample::prev_state_offset(this),
-        DataSample::prev_action_offset(this),
-        DataSample::prev_reward_offset(this),
-        DataSample::prev_prob_offset(this),
-        DataSample::prev_value_offset(this),
-        DataSample::next_state_offset(this),
-        DataSample::next_action_offset(this),
-        DataSample::next_reward_offset(this),
-        DataSample::next_prob_offset(this),
-        DataSample::next_value_offset(this),
-        DataSample::entry_weight_offset(this),
+    fprintf(f, "sizes: %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu, %lu: %ld\n",
+        DataSample::prev_action_offset(this) - DataSample::prev_state_offset(this),
+        DataSample::prev_reward_offset(this) - DataSample::prev_action_offset(this),
+        DataSample::prev_prob_offset(this) - DataSample::prev_reward_offset(this),
+        DataSample::prev_value_offset(this) - DataSample::prev_prob_offset(this),
+        DataSample::next_state_offset(this) - DataSample::prev_value_offset(this),
+        DataSample::next_action_offset(this) - DataSample::next_state_offset(this),
+        DataSample::next_reward_offset(this) - DataSample::next_action_offset(this),
+        DataSample::next_prob_offset(this) - DataSample::next_reward_offset(this),
+        DataSample::next_value_offset(this) - DataSample::next_prob_offset(this),
+        DataSample::entry_weight_offset(this) - DataSample::next_value_offset(this),
+        DataSample::nbytes(this) - DataSample::entry_weight_offset(this),
         DataSample::nbytes(this));
   }
 
@@ -518,7 +518,6 @@ protected:
     }
   }
 
-
 public:
   /**
    * Prepare for a new episode
@@ -565,8 +564,10 @@ public:
     if(!episode.empty() and new_offset != get_offset_for_new())
       qthrow("Please call new_episode() before add_entry().");
     // Check space
-    while(new_length == get_length_for_new())
+    while(new_length == get_length_for_new()) {
+      //qlog_info("new_length: %ld, get_length_for_new: %ld\n", new_length, get_length_for_new());
       remove_oldest();
+    }
     long idx = (new_offset + new_length) % capacity;
     auto& entry = data[idx];
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v);
@@ -579,7 +580,7 @@ public:
    * 
    * @return true iff success
    */
-  bool get_cache(DataCache* p_cache)
+  bool get_cache(DataCache* p_cache, float& out_sum_weight)
   {
     if(episode.size() == 0) {
       qlog_warning("%s() failed as the ReplayMemory is empty.\n", __func__);
@@ -609,8 +610,8 @@ public:
       }
       if(s.entry_weight(this).data())
         s.entry_weight(this)[0] = prt.get_weight(idx);
-      s.print_first(this); // DEBUG
     }
+    out_sum_weight = prt.get_weight_sum();
     return true;
   }
 

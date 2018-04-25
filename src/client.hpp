@@ -96,20 +96,19 @@ public:
     req->sender = prm->uuid;
     int * p_length = reinterpret_cast<int *>(&req->payload);
     *p_length = prm->new_length;
-    qlog_info("%s(): length: %d\n",__func__, *p_length);
+    //qlog_info("%s(): length: %d\n",__func__, *p_length);
     ZMQ_CALL(zmq_send(rrsoc, reqbuf, reqbuf_size, 0));
     ZMQ_CALL(zmq_recv(rrsoc, repbuf, repbuf_size, 0));
   }
 
   void push_cache() {
-    bool ret = prm->get_cache(cache_buf);
+    bool ret = prm->get_cache(cache_buf, push->sum_weight);
     if(not ret) // failed
       return;
     push->type = Message::ProtocalCache;
     push->length = Cache::nbytes(prm);
     push->sender = prm->uuid;
-    qlog_info("%s(): cache_size: %d, cache::nbytes: %lu\n",
-        __func__, prm->cache_size, Cache::nbytes(prm));
+    //qlog_info("%s(): cache_size: %d, cache::nbytes: %lu\n", __func__, prm->cache_size, Cache::nbytes(prm));
     ZMQ_CALL(zmq_send(ppsoc, pushbuf, pushbuf_size, ZMQ_SNDMORE));
     ZMQ_CALL(zmq_send(ppsoc, cache_buf, push->length, 0));
   }

@@ -72,7 +72,7 @@ public:
       float * entry_weight_arr)
   {
     if(total_caches < caches.size()) {
-      qlog_warning("get_batch() failed as caches are not all filled.\n");
+      qlog_warning("get_batch() failed as caches are not all filled (%lu < %lu).\n", total_caches, caches.size());
       return false;
     }
     for(size_t i=0; i<batch_size; i++) {
@@ -82,8 +82,10 @@ public:
         std::lock_guard<std::mutex> guard(cache_mutex);
         c_idx = cache_prt.sample_index();
         s_idx = sample_index[c_idx];
-        qlog_info("c_idx: %ld, s_idx: %d\n", c_idx, s_idx); // DEBUG
-        qassert(s_idx < prm->cache_size); // current sample is valid
+        if(s_idx >= prm->cache_size) {
+          qlog_warning("all caches pushed by actors are used. (total_caches: %lu)\n", total_caches);
+          return false;
+        }
         sample_index[c_idx] += 1;
         if(sample_index[c_idx] >= prm->cache_size) { // cache is fully used
           cache_prt.set_weight(c_idx, 0.0);
@@ -91,7 +93,6 @@ public:
       }
       // add caches[c_idx][s_idx] to batch
       auto& s = caches[c_idx].get(s_idx, prm);
-      s.print_first(prm); // DEBUG
       s.to_memory(prm, i,
           prev_s, prev_a, prev_r, prev_p, prev_v,
           next_s, next_a, next_r, next_p, next_v,
@@ -126,7 +127,7 @@ public:
         RM * p = reinterpret_cast<RM *>(&rets->payload);
         // memcpy. Only primary objects are valid.
         memcpy(p, prm, sizeof(RM));
-        qlog_info("REP: ProtocalSizes\n");
+        //qlog_info("REP: ProtocalSizes\n");
         ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
       else if(args->type == Message::ProtocalCounter) {
@@ -137,7 +138,7 @@ public:
           total_episodes += 1;
           total_steps += *p_length;
         }
-        qlog_info("REP: ProtocalCounter: total_steps: %lu\n", total_steps);
+        //qlog_info("REP: ProtocalCounter: total_steps: %lu\n", total_steps);
         ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
       else
@@ -162,28 +163,30 @@ public:
     char * buf = (char*)malloc(buf_size); qassert(buf);
     Message * args = reinterpret_cast<Message*>(buf);
     int size;
+    int idx;
+    const size_t expected_size = Cache::nbytes(prm);
+    if(true) {
+      std::lock_guard<std::mutex> guard(cache_mutex);
+      cache_prt.set_weight(cache_index, 0.0);
+      idx = cache_index;
+      cache_index = (cache_index + 1) % caches.size();
+      total_caches += 1;
+    }
     while(true) {
       ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); qassert(size <= buf_size);
       if(args->type == Message::ProtocalCache) {
-        int idx;
-        if(true) {
-          std::lock_guard<std::mutex> guard(cache_mutex);
-          cache_prt.set_weight(cache_index, 0.0);
-          idx = cache_index;
-          cache_index = (cache_index + 1) % caches.size();
-          total_caches += 1;
-        }
-        size_t expected_size = Cache::nbytes(prm);
         qassert(args->length == expected_size);
         ZMQ_CALL(size = zmq_recv(soc, &caches[idx], expected_size, 0));
-        qlog_info("PULL: ProtocalCache: nbytes(): %lu\n", expected_size);
-        for(int i=0; i<prm->cache_size; i++)
-          caches[idx].get(i, prm).print_first(prm);
+        //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
         qassert(size == expected_size);
         sample_index[idx] = 0;
         if(true) {
           std::lock_guard<std::mutex> guard(cache_mutex);
           cache_prt.set_weight(idx, args->sum_weight); // payload as sum of weight
+          cache_prt.set_weight(cache_index, 0.0);
+          idx = cache_index;
+          cache_index = (cache_index + 1) % caches.size();
+          total_caches += 1;
         }
       }
       else

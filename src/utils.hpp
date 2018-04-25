@@ -31,7 +31,7 @@ protected:
 #ifndef ZMQ_CALL
 #define ZMQ_CALL(x) do { \
   int rc = (x); \
-  if(-1==rc) { \
+  if(unlikely(-1==rc)) { \
     int e = zmq_errno(); \
     qlog_error("[%d]'%s' (rc: %d)\n", e, zmq_strerror(e), rc); \
     throw std::runtime_error("ZeroMQ call failed."); \
