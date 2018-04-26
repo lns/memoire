@@ -345,7 +345,7 @@ public:
 
   float discount_factor;             ///< discount factor for calculate R with rewards
   float priority_exponent;           ///< exponent of priority term (default 0.5)
-  float td_lambda;                   ///< mixture factor for TD-lambda
+  float td_lambda;                   ///< mixture factor for TD
   int frame_stack;                   ///< Number of frames stacked for each state (default 1)
   int multi_step;                    ///< Number of steps between prev and next (default 1)
   int cache_size;                    ///< Cache size, number of sample in a cache
@@ -485,14 +485,18 @@ protected:
       return;
     // TODO: different discount_factor for different dimension of reward.
     const auto& gamma = discount_factor;
-    for(int i=epi.length-1; i>=0; i--) {
+    for(int i=epi.length-2; i>=0; i--) { // skip the terminal state
       long post = (epi.offset + i + 1) % capacity;
       long prev = (epi.offset + i) % capacity;
       auto post_reward = data[post].reward(this);
       auto post_value  = data[post].value(this);
       auto prev_reward = data[prev].reward(this);
+      //auto prev_value  = data[prev].value(this);
       for(int j=0; j<prev_reward.size(); j++) { // OPTIMIZE:
+        // TD-Lambda
         prev_reward[j] += td_lambda * gamma * post_reward[j] + (1-td_lambda) * gamma * post_value[j];
+        // GAE
+        //prev_reward[j] += gamma * post_value[j] - prev_value[j] + gamma * gae_lambda * post_reward[j];
       }
     }
   }
