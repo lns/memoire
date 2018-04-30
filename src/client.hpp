@@ -105,7 +105,7 @@ public:
     bool ret = prm->get_cache(cache_buf, push->sum_weight);
     if(not ret) // failed
       return;
-    cache_buf->get(prm->cache_size-1, prm).print_first(prm); // DEBUG
+    //cache_buf->get(prm->cache_size-1, prm).print_first(prm); // DEBUG
     push->type = Message::ProtocalCache;
     push->length = Cache::nbytes(prm);
     push->sender = prm->uuid;

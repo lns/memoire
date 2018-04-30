@@ -350,6 +350,7 @@ public:
   int multi_step;                    ///< Number of steps between prev and next (default 1)
   int cache_size;                    ///< Cache size, number of sample in a cache
   int max_episode;                   ///< Max number of stored episodes allowed (0 or neg for not checking)
+  int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
   float rwd_coeff[MAX_RWD_DIM];      ///< rwd coefficient
   uint8_t cache_flags[10];           ///< Whether we should collect prev s,a,r,p,v and next s,a,r,p,v in caches
 
@@ -388,6 +389,7 @@ public:
     capacity{capa},
     cache_size{0},
     max_episode{0},
+    reuse_cache{0},
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(capacity)},

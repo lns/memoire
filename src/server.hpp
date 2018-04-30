@@ -83,11 +83,15 @@ public:
         c_idx = cache_prt.sample_index();
         s_idx = sample_index[c_idx];
         if(s_idx >= prm->cache_size) {
-          qlog_warning("all caches pushed by actors are used. (total_caches: %lu)\n", total_caches);
-          return false;
+          if(prm->reuse_cache) {
+            s_idx = sample_index[c_idx] = 0;
+          } else {
+            qlog_warning("all caches pushed by actors are used. (total_caches: %lu)\n", total_caches);
+            return false;
+          }
         }
         sample_index[c_idx] += 1;
-        if(sample_index[c_idx] >= prm->cache_size) { // cache is fully used
+        if(sample_index[c_idx] >= prm->cache_size and !prm->reuse_cache) { // cache is fully used
           cache_prt.set_weight(c_idx, 0.0);
         }
       }
