@@ -16,7 +16,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire, ver 18.04.12, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire, ver 18.05.04, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -48,6 +48,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("multi_step", &RM::multi_step)
     .def_readwrite("cache_size", &RM::cache_size)
     .def_readwrite("max_episode", &RM::max_episode)
+    .def_readwrite("reuse_cache", &RM::reuse_cache)
     .def_property("rwd_coeff",
       [](RM& rm) {
         py::list l;
