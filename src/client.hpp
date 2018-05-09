@@ -50,24 +50,30 @@ public:
     push = reinterpret_cast<Message*>(pushbuf);
     // Get sizes
     sync_sizes(rem_capacity);
-    // Make cache buf
-    cache_buf = (Cache*)malloc(Cache::nbytes(prm));
   }
 
   ~ReplayMemoryClient() {
-    free(cache_buf);
+    if(prm)
+      delete prm;
+    if(cache_buf)
+      free(cache_buf);
     zmq_close(rrsoc);
     zmq_close(ppsoc);
     free(reqbuf);
     free(repbuf);
     free(pushbuf);
-    delete prm;
     zmq_ctx_destroy(ctx);
   }
 
   void sync_sizes(size_t capa) {
-    if(prm)
+    if(prm) {
       delete prm;
+      prm = nullptr;
+    }
+    if(cache_buf) {
+      free(cache_buf);
+      cache_buf = nullptr;
+    }
     req->type = Message::ProtocalSizes;
     req->sender = 0;
     ZMQ_CALL(zmq_send(rrsoc, reqbuf, reqbuf_size, 0));
@@ -86,6 +92,8 @@ public:
     prm->cache_size  = p->cache_size;
     std::copy(std::begin(p->rwd_coeff), std::end(p->rwd_coeff), std::begin(prm->rwd_coeff));
     std::copy(std::begin(p->cache_flags), std::end(p->cache_flags), std::begin(prm->cache_flags));
+    // Make cache buf
+    cache_buf = (Cache*)malloc(Cache::nbytes(prm));
   }
 
   /**
