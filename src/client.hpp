@@ -31,7 +31,7 @@ public:
   ReplayMemoryClient(
       const char * req_endpoint,
       const char * push_endpoint,
-      size_t rem_capacity) : prm(nullptr)
+      size_t rem_capacity) : prm(nullptr), cache_buf(nullptr)
   {
     ctx = zmq_ctx_new(); qassert(ctx);
     rrsoc = zmq_socket(ctx, ZMQ_REQ); qassert(rrsoc);

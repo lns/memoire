@@ -1,6 +1,9 @@
 # Memoire
 
-**Memoire** is a distributed replay memory for reinforcement learning. Industrial application of reinforcement learning usually requires large amount of computation, both for environemnt exploration and neural network training. Our goal is to make it easier to write high-performance distributed reinforcement learning algorithm.
+**Memoire** is a distributed replay memory for reinforcement learning.
+Industrial applications of reinforcement learning usually require large amount of computation,
+both for environment exploration and neural network training.
+Our goal is to make it easier to write high-performance distributed reinforcement learning algorithm.
 
 ## How it works
 
@@ -8,13 +11,13 @@ The distributed reinforcement learning platform consists of two types of workers
 
 ![DistRL](/docs/imgs/DistRL.png "Framework of Distributed RL")
 
-An actor is responsible for exploring the environment and generating data for the learners. In its mainloop, it works as
+An actor is responsible for exploring the environment and generating data for the learners. In its main-loop, it works as
 1. Get latest model(policy) from learners.
 2. Act in the environment according to the current policy.
 3. Put generated experience in the client side of replay memory.
 4. Client push samples to the server.
 
-An learner is responsible for updating the model with batch data. In its mainloop, it works as
+An learner is responsible for updating the model with batch data. In its main-loop, it works as
 1. Get batch of samples from the server side of replay memory.
 2. Update model with batch samples, according to different algorithms.
 3. Publish latest model to actors.
@@ -35,7 +38,7 @@ We provide 3 methods to **create** space for a new episode, **add** a transition
 and **close** a terminated episode.
 When an episode is closed, the TD-lambda return for each step is calculated automatically,
 and its priority for sampling is updated.
-We also provide a method to sampling current trajectories to form a cache, and push it to the learner.
+We also provide a method to sample current trajectories to form a cache, and push it to the learner.
 
 The server side receives pushed caches from clients automatically.
 When we need batch of samples for training, we can **get** a batch from these pushed caches with another phase of sampling.
@@ -49,20 +52,20 @@ are pushed to the learner for model updating.
 In the case that we have enormous number of actors,
 this kind of design can decrease both the bandwidth burden and memory usage of the learner.
 At the same time, the learner can still get the sample with high priority,
-and update the model efficiently by the flavour of prioritized sampling.
+and update the model efficiently by the flavor of prioritized sampling.
 
 ## Features
 + Prioritized Sampling
 
-  Prioritized experience replay [1] is a method of selecting high-priority samples for training. It is argubly the most effective technique for good performance of (distributed) reinforcement learning [2] [3].
+  Prioritized experience replay [1] is a method of selecting high-priority samples for training. It is arguably the most effective technique for good performance of (distributed) reinforcement learning [2] [3].
 
-+ Framework Independency
++ Framework Independence
 
-  The replay memory module is seperated from the training of neural network, thus making it independent of the deep learning framework used to implement the neural network (e.g. TensorFlow, PyTorch, etc.). We hope the modulized design can provide more flexibility for deep learning practitioners.
+  The replay memory module is separated from the training of neural network, thus making it independent of the deep learning framework used to implement the neural network (e.g. TensorFlow, PyTorch, etc.). We hope the modular design can provide more flexibility for deep learning practitioners.
 
-+ Frame Stacking, N-Step Learning, Multi-dimensional Reward, TD-lambda return computing.
++ Frame Stacking, N-Step Learning, Multidimensional Reward, TD-lambda return computing.
 
-  These are common and useful components of reinforcement learning in practice.
+  These are common and useful components of reinforcement learning in practice, which are implemented in our module for convenience.
 
 ## Usage
 See `example/`
