@@ -5,6 +5,7 @@ import os, time
 from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
+# Here we config the state_size, action_size, reward_size, prob_size, value_size in the server
 sizes = (1,1,1,0,1)
 rem = ReplayMemory(*sizes, capacity=0)
 rem.discount_factor = 0.0

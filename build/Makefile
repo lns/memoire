@@ -14,22 +14,21 @@ else
 	BACKWARD_LD=
 endif
 
-PY27INC=`python -m pybind11 --includes`
+PY27INC=`python2.7 -m pybind11 --includes`
 PY34INC=`python3.4 -m pybind11 --includes`
 PY36INC=-I$(ROOT)/include/python3.6m
+
+PYINC=$(PY27INC)
 
 INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include
 LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
-ALL=memoire.py27.so memoire.py36.so
+ALL=memoire.so
 
 all: $(ALL)
 
-memoire.py27.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
-	$(CXX) $(CXXFLAGS) -fPIC -shared $(PY27INC) $(INCLUDES) -o $@ $< $(LDFLAGS)
-
-memoire.py36.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
-	$(CXX) $(CXXFLAGS) -fPIC -shared $(PY36INC) $(INCLUDES) -o $@ $< $(LDFLAGS)
+memoire.so: $(ROOT)/memoire.cpp $(ROOT)/src/*
+	$(CXX) $(CXXFLAGS) -fPIC -shared $(PYINC) $(INCLUDES) -o $@ $< $(LDFLAGS)
 
 clean:
 	-rm -f $(ALL)

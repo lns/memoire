@@ -71,9 +71,18 @@ and update the model efficiently by the flavor of prioritized sampling.
 See `example/`
 
 ## Build
+We support different version of python. To use this module, firstly choose your version of python in the following line of Makefile
+```make
+PYINC=$(PY27INC)
+```
+Then execute
 ```shell
 cd build/
 make
+```
+The generated `memoire.so` can be directly imported in python by
+```python
+import memoire
 ```
 
 ## Dependency
