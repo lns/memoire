@@ -41,6 +41,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("value_size", &RM::value_size)
     .def_readonly("entry_size", &RM::entry_size)
     .def_readonly("capacity", &RM::capacity)
+    .def_readonly("uuid", &RM::uuid)
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("priority_exponent", &RM::priority_exponent)
     .def_readwrite("td_lambda", &RM::td_lambda)
@@ -71,7 +72,6 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         for(int i=0; i<10 and i<(int)l.size(); i++)
           rm.cache_flags[i] = py::cast<uint8_t>(l[i]);
       })
-    .def_readonly("uuid", &RM::uuid)
     .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t capa) {
             return std::unique_ptr<RM>(new RM(ss,as,rs,ps,vs,capa,&lcg64));
           }),
