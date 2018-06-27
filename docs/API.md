@@ -5,7 +5,10 @@ namely `ReplayMemory`, `ReplayMemoryClient`, and `ReplayMemoryServer`. The class
 class for managing generated replay data, and the class `ReplayMemoryClient` and `ReplayMemoryServer` wrap
 over `ReplayMemory` to handle network connections.
 
-In the class of `ReplayMemory`, we define the following **readonly** properties
+### ReplayMemory
+
+The class of `ReplayMemory` can be seen as a local memory structure for storing the episode data.
+In this class, we define the following **readonly** properties
 ```python
 class ReplayMemory:
   # Read only properties
@@ -86,3 +89,95 @@ class ReplayMemory:
     pass
     
 ```
+
+### ReplayMemoryServer
+A `ReplayMemoryServer` is usually used with learner worker. The server receives sampled data from
+clients and prepares batches of samples for training. The communication is built on facilities provided by [ZeroMQ](http://zeromq.org/).
+For the meaning of "REQ/REP", "PULL/PUSH" protocal, as well as "endpoint" and "proxy", please refer to [ZeroMQ - The Guide](http://zguide.zeromq.org/page:all).
+The class `ReplayMemoryServer` supports following methods
+```python
+class ReplayMemoryServer
+
+  def __init__(self, replay_memory, n_caches):
+    """ Initialize a ReplayMemoryServer
+
+    :param  replay_memory:  a configured ReplayMemory instance
+    :param  n_caches:       number of caches kept at the server side """
+    pass
+
+  def rep_worker_main(self, endpoint, mode):
+    """ Mainloop for a REP worker 
+
+    a REP worker is responsible for receiving counter update (`n_episode` and `n_steps`)
+    and also responsing `GetSizes` requests.
+
+    :param  endpoint:  endpoint as in zeromq format
+    :param  mode:      'Bind' for binding the endpoint to a port, or 'Conn' for connecting to the endpoint """
+    pass
+
+  def pull_worker_main(self, endpoint, mode):
+    """ Mainloop for a PULL worker 
+
+    a PULL worker is responsible for receiving caches from clients.
+
+    :param  endpoint:  endpoint as in zeromq format
+    :param  mode:      'Bind' for binding the endpoint to a port, or 'Conn' for connecting to the endpoint """
+    pass
+
+  def rep_proxy_main(self, front_ep, back_ep):
+    """ Mainloop for a REP Proxy
+
+    :param  front_ep:  front endpoint
+    :param  back_ep:   back endpoint """
+    pass
+
+  def pull_proxy_main(self, front_ep, back_ep):
+    """ Mainloop for a PULL Proxy
+
+    :param  front_ep:  front endpoint
+    :param  back_ep:   back endpoint """
+    pass
+
+  def get_batch(self, batch_size):
+    """ Get a batch from the distributed replay memory
+
+    This call can be used to prepare a batch of samples for the neural network learner.
+    We define a transition as the pair of a previous states (s,a,r,p,v) and the next state (s,a,r,p,v).
+    The `get_batch()` call will return a batch of transitions, as well as their prioritized weight of sampling.
+    Please see our vignette for the details of prioritized sampling. 
+    
+    :param  batch_size: Batch size
+    
+    :rtype: tuple(prev, next, weight) """
+    pass
+```
+
+### ReplayMemoryClient
+A `ReplayMemoryClient` is usually used in an actor worker to store generated experience locally, and communicate
+with the remote `ReplayMemoryServer`. The class supports the following methods
+```python
+class ReplayMemoryClient
+
+  def __init__(self, req_endpoint, push_endpoint, capacity):
+    """ Initialize a ReplayMemoryClient
+
+    This function call will construct a ReplayMemory, with sizes synchronized from the remote ReplayMemoryServer.
+
+    :param  req_endpoint: endpoint for REP/REQ protocal
+    :param  push_endpoint: endpoint for PUSH/PULL protocal
+    :param  capacity: ReplayMemory's capacity """
+    pass
+
+  def sync_sizes(self):
+    """ Manually synchonize sizes from the server """
+    pass
+
+  def update_counter(self):
+    """ Update local counter to the server. Should be called after each finished episode. """
+    pass
+
+  def push_cache(self):
+    """ Construct and push a cache to the server. Should be called periodically. """
+    pass
+```
+

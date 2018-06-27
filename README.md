@@ -1,6 +1,6 @@
 # Memoire
 
-**Memoire** is a distributed replay memory for reinforcement learning.
+**Memoire** (pronounced "mem-wah-r") is a distributed replay memory for reinforcement learning.
 Industrial applications of reinforcement learning usually require large amount of computation,
 both for environment exploration and neural network training.
 Our goal is to make it easier to write high-performance distributed reinforcement learning algorithm.
