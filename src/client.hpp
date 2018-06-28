@@ -81,6 +81,8 @@ public:
       free(cache_buf);
       cache_buf = nullptr;
     }
+    if(not rrsoc)
+      qlog_error("REQ/REP socket is not connected.\n");
     req->type = Message::ProtocalSizes;
     req->sender = 0;
     ZMQ_CALL(zmq_send(rrsoc, reqbuf.data(), reqbuf.size(), 0));
@@ -108,13 +110,14 @@ public:
    */
   const std::string sub_bytes(std::string topic) {
     if(not pssoc)
-      qlog_warning("PUB/SUB socket is not connected.\n");
+      qlog_error("PUB/SUB socket is not connected.\n");
     ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
     int size;
     while(true) {
       memset(subbuf.data(), 0, subbuf.size());
       // Recv topic
       ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0)); qassert(size <= (int)subbuf.size());
+      //qlog_info("topic: %s\n", std::string((char*)subbuf.data(), subbuf.size()).c_str());
       // Recv Message
       ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0));
       if(not (size <= (int)subbuf.size())) {
@@ -132,7 +135,7 @@ public:
    */
   void update_counter() {
     if(not rrsoc)
-      qlog_warning("REQ/REP socket is not connected.\n");
+      qlog_error("REQ/REP socket is not connected.\n");
     req->type = Message::ProtocalCounter;
     req->sender = prm->uuid;
     int * p_length = reinterpret_cast<int *>(&req->payload);
@@ -144,7 +147,7 @@ public:
 
   void push_cache() {
     if(not ppsoc)
-      qlog_warning("PUSH/PULL socket is not connected.\n");
+      qlog_error("PUSH/PULL socket is not connected.\n");
     bool ret = prm->get_cache(cache_buf, push->sum_weight);
     if(not ret) // failed
       return;

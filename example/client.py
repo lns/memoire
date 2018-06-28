@@ -29,5 +29,6 @@ try:
     client.update_counter()
     client.push_cache()
 except KeyboardInterrupt:
-  os.kill(os.getpid(), 9)
+  pass
+os.kill(os.getpid(), 9)
 

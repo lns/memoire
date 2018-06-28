@@ -42,5 +42,6 @@ try:
     print(next_e)
     print(weight)
 except KeyboardInterrupt:
-  os.kill(os.getpid(), 9)
+  pass
+os.kill(os.getpid(), 9)
 

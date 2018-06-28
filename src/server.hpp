@@ -61,7 +61,8 @@ public:
    */
   void pub_bytes(const std::string& topic, const std::string& message) {
     if(not pssoc)
-      qlog_warning("PUB/SUB socket is not opened.\n");
+      qlog_error("PUB/SUB socket is not opened.\n");
+    //qlog_info("Send topic: %s\n", topic.c_str());
     ZMQ_CALL(zmq_send(pssoc, topic.data(), topic.size(), ZMQ_SNDMORE));
     ZMQ_CALL(zmq_send(pssoc, message.data(), message.size(), 0));
   }
