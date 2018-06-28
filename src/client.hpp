@@ -18,36 +18,45 @@ protected:
   void * ctx;
   void * rrsoc; // for request-reply
   void * ppsoc; // for push-pull
-  int reqbuf_size;
-  char * reqbuf;
-  int repbuf_size;
-  char * repbuf;
-  int pushbuf_size;
-  char * pushbuf;
-  Message *req, *rep, *push;
+  void * pssoc; // for pub-sub
+  Mem reqbuf, repbuf, pushbuf, subbuf;
+  Message *req, *rep, *push, *sub;
   Cache * cache_buf;
 
 public:
+  /**
+   * Initialization
+   *
+   * endpoint can be set to nullptr or "" to disable this protocal
+   */
   ReplayMemoryClient(
       const char * req_endpoint,
       const char * push_endpoint,
+      const char * sub_endpoint,
       size_t rem_capacity) : prm(nullptr), cache_buf(nullptr)
   {
     ctx = zmq_ctx_new(); qassert(ctx);
-    rrsoc = zmq_socket(ctx, ZMQ_REQ); qassert(rrsoc);
-    ZMQ_CALL(zmq_connect(rrsoc, req_endpoint));
-    ppsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(ppsoc);
-    ZMQ_CALL(zmq_connect(ppsoc, push_endpoint));  
+    if(req_endpoint and 0!=strcmp(req_endpoint, "")) {
+      rrsoc = zmq_socket(ctx, ZMQ_REQ); qassert(rrsoc);
+      ZMQ_CALL(zmq_connect(rrsoc, req_endpoint));
+    }
+    if(push_endpoint and 0!=strcmp(push_endpoint, "")) {
+      ppsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(ppsoc);
+      ZMQ_CALL(zmq_connect(ppsoc, push_endpoint));  
+    }
+    if(sub_endpoint and 0!=strcmp(sub_endpoint, "")) {
+      pssoc = zmq_socket(ctx, ZMQ_SUB); qassert(pssoc);
+      ZMQ_CALL(zmq_connect(pssoc, sub_endpoint));
+    }
     // Make bufs
-    reqbuf_size  = RM::reqbuf_size();
-    reqbuf = (char*)malloc(reqbuf_size);
-    req  = reinterpret_cast<Message*>(reqbuf);
-    repbuf_size  = RM::repbuf_size();
-    repbuf = (char*)malloc(repbuf_size);
-    rep  = reinterpret_cast<Message*>(repbuf);
-    pushbuf_size = RM::pushbuf_size();
-    pushbuf = (char*)malloc(pushbuf_size);
-    push = reinterpret_cast<Message*>(pushbuf);
+    reqbuf.resize(RM::reqbuf_size());
+    req  = reinterpret_cast<Message*>(reqbuf.data());
+    repbuf.resize(RM::repbuf_size());
+    rep  = reinterpret_cast<Message*>(repbuf.data());
+    pushbuf.resize(RM::pushbuf_size());
+    push = reinterpret_cast<Message*>(pushbuf.data());
+    subbuf.resize(256); // TODO
+    sub  = reinterpret_cast<Message*>(subbuf.data());
     // Get sizes
     sync_sizes(rem_capacity);
   }
@@ -59,9 +68,7 @@ public:
       free(cache_buf);
     zmq_close(rrsoc);
     zmq_close(ppsoc);
-    free(reqbuf);
-    free(repbuf);
-    free(pushbuf);
+    zmq_close(pssoc);
     zmq_ctx_destroy(ctx);
   }
 
@@ -76,8 +83,8 @@ public:
     }
     req->type = Message::ProtocalSizes;
     req->sender = 0;
-    ZMQ_CALL(zmq_send(rrsoc, reqbuf, reqbuf_size, 0));
-    ZMQ_CALL(zmq_recv(rrsoc, repbuf, repbuf_size, 0));
+    ZMQ_CALL(zmq_send(rrsoc, reqbuf.data(), reqbuf.size(), 0));
+    ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
     qassert(rep->type == req->type);
     // Get sizes
     RM * p = reinterpret_cast<RM*>(&rep->payload);
@@ -100,16 +107,20 @@ public:
    * Should be called after closing an episode
    */
   void update_counter() {
+    if(not rrsoc)
+      qlog_warning("REQ/REP socket is not connected.\n");
     req->type = Message::ProtocalCounter;
     req->sender = prm->uuid;
     int * p_length = reinterpret_cast<int *>(&req->payload);
     *p_length = prm->new_length;
     //qlog_info("%s(): length: %d\n",__func__, *p_length);
-    ZMQ_CALL(zmq_send(rrsoc, reqbuf, reqbuf_size, 0));
-    ZMQ_CALL(zmq_recv(rrsoc, repbuf, repbuf_size, 0));
+    ZMQ_CALL(zmq_send(rrsoc, reqbuf.data(), reqbuf.size(), 0));
+    ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
   }
 
   void push_cache() {
+    if(not ppsoc)
+      qlog_warning("PUSH/PULL socket is not connected.\n");
     bool ret = prm->get_cache(cache_buf, push->sum_weight);
     if(not ret) // failed
       return;
@@ -118,8 +129,29 @@ public:
     push->length = Cache::nbytes(prm);
     push->sender = prm->uuid;
     //qlog_info("%s(): cache_size: %d, cache::nbytes: %lu\n", __func__, prm->cache_size, Cache::nbytes(prm));
-    ZMQ_CALL(zmq_send(ppsoc, pushbuf, pushbuf_size, ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(ppsoc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
     ZMQ_CALL(zmq_send(ppsoc, cache_buf, push->length, 0));
+  }
+
+  const std::string* recv_bytes(std::string topic) {
+    if(not pssoc)
+      qlog_warning("PUB/SUB socket is not connected.\n");
+    ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
+    int size;
+    while(true) {
+      memset(subbuf, 0, subbuf_size);
+      // Recv topic
+      ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0)); qassert(size <= (int)subbuf.size());
+      // Recv Message
+      ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0));
+      if(not (size <= (int)subbuf.size())) {
+        subbuf.resize(size)
+        qlog_warning("Resize subbuf to %lu\n", subbuf.size());
+        continue;
+      }
+      else
+        return std::string(subbuf.data(), size);
+    }
   }
 
 };

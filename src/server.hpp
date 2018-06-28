@@ -15,6 +15,7 @@ public:
 
   RM * prm;
   void * ctx;
+  void * pssoc;                      ///< PUB/SUB socket
 
   Vector<Cache> caches;              ///< caches of data collected from actors
   PrtTree cache_prt;                 ///< PrtTree for sampling
@@ -27,7 +28,7 @@ public:
   size_t total_steps;                ///< counter of total steps
   std::mutex counter_mutex;
 
-  ReplayMemoryServer(RM * p_rem, int n_caches) : prm{p_rem}, ctx{nullptr},
+  ReplayMemoryServer(RM * p_rem, const char* pub_endpoint, int n_caches) : prm{p_rem}, ctx{nullptr},
     caches{Cache::nbytes(prm)}, cache_prt{prm->rng, n_caches}, total_caches{0},
     total_episodes{0}, total_steps{0}
   {
@@ -35,10 +36,28 @@ public:
     caches.resize(n_caches);
     sample_index.resize(n_caches, 0);
     cache_index = 0;
+    // PUB endpoint
+    if(pub_endpoint and strcmp(pub_endpoint, "")) {
+      pssoc = zmq_socket(ctx, ZMQ_PUB); qassert(pssoc);
+      ZMQ_CALL(zmq_bind(soc, endpoint));
+    }
   }
 
-  ~ReplayMemoryServer() { zmq_ctx_destroy(ctx); }
+  ~ReplayMemoryServer() { 
+    zmq_close(pssoc);
+    zmq_ctx_destroy(ctx);
+  }
 
+  /**
+   * Publish a byte string to clients
+   */
+  void pub_bytes(const std::string& topic, const std::string& data) {
+    if(not pssoc)
+      qlog_warning("PUB/SUB socket is not opened.\n");
+    ZMQ_CALL(zmq_send(pssoc, topic.data(), topic.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(pssoc, data.data(), data.size(), 0));
+  }
+  
   /**
    * Get a batch of samples from caches, to be used by learner
    *

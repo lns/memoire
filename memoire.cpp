@@ -106,11 +106,13 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .export_values();
 
   py::class_<RMC>(m, "ReplayMemoryClient")
-    .def(py::init<const char*, const char*, size_t>(), "req_endpoint"_a, "push_endpoint"_a, "capacity"_a)
+    .def(py::init<const char*, const char*, const char*, size_t>(),
+        "req_endpoint"_a, "push_endpoint"_a, "sub_endpoint"_a, "capacity"_a)
     .def_readonly("prm", &RMC::prm)
     .def("sync_sizes", &RMC::sync_sizes)
     .def("update_counter", &RMC::update_counter)
-    .def("push_cache", &RMC::push_cache);
+    .def("push_cache", &RMC::push_cache)
+    .def("sub_bytes", &RMC::sub_bytes);
 
   py::class_<RMS>(m, "ReplayMemoryServer")
     .def(py::init<RM*, int>(), "replay_memory"_a, "n_caches"_a)
@@ -130,6 +132,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         py::gil_scoped_release release;
         s.pull_proxy_main(f,b);
         }, "front_ep"_a, "back_ep"_a)
+    .def("pub_bytes", &RMS::pub_bytes)
     .def("get_batch", [](RMS& s,
           size_t batch_size) {
         size_t stack_size = s.prm->frame_stack;
