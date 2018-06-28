@@ -113,6 +113,9 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("push_cache", &RMC::push_cache);
 
   py::class_<RMS>(m, "ReplayMemoryServer")
+    .def_readonly("total_caches", &RMS::total_caches)
+    .def_readonly("total_episodes", &RMS::total_episodes)
+    .def_readonly("total_steps", &RMS::total_steps)
     .def(py::init<RM*, int>(), "replay_memory"_a, "n_caches"_a)
     .def("rep_worker_main", [](RMS& s, const char * ep, typename RM::Mode m) {
         py::gil_scoped_release release;

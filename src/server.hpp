@@ -13,7 +13,7 @@ public:
   typedef typename RM::Message Message;
   typedef typename RM::DataCache Cache;
 
-  RM * prm;
+  RM * prm; // TODO: This may cause use after free error!
   void * ctx;
 
   Vector<Cache> caches;              ///< caches of data collected from actors
