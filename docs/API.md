@@ -8,9 +8,10 @@ over `ReplayMemory` to handle network connections.
 ### ReplayMemory
 
 The class of `ReplayMemory` can be seen as a local memory structure for storing the episode data.
-In this class, we define the following **readonly** properties
+In this class, we define the following properties
 ```python
 class ReplayMemory:
+
   # Read only properties
   state_size    # size of state  (dtype = np.uint8)
   action_size   # size of action (dtype = np.float32)
@@ -18,29 +19,26 @@ class ReplayMemory:
   prob_size     # size of prob   (dtype = np.float32)
   value_size    # size of value  (dtype = np.float32)
   entry_size    # byte size of (s,a,r,p,v)
-  capacity      # max number of sample can be stored in this ReplayMemory
+  max_step      # max number of sample can be stored in this ReplayMemory
   uuid          # universally unique identifier for this instance
-```
-and **readwrite** properties
-```python
-class ReplayMemory:
+
   # Read write properties
-  discount_factor     # \gamma: the discount factor used for cumulate reward
   priority_exponent   # \beta: the coefficient for prioritized sampling 
-  td_lambda           # \lambda: mixture coefficient for computing multi-step return
+  mix_lambda          # \lambda: mixture coefficient for computing multi-step return
   frame_stack         # number of frames stacked for each state (default 1)
   multi_step          # number of steps between prev and next (default 1)
   cache_size          # number of samples in a cache
   max_episode         # max number of episodes allowed in this ReplayMemory
   reuse_cache         # whether to discard used cache or to reuse them
-  rwd_coeff           # mixture coefficient for multi-dimensional reward (should match `reward_size`)
+  discount_factor     # \gamma: the (multidimensional) discount factor used for cumulate reward (should match `reward_size`)
+  reward_coeff        # mixture coefficient for multi-dimensional reward (should match `reward_size`)
   cache_flags         # whether previous (s,a,r,p,v) and next (s,a,r,p,v) should be cached in caches
 ```
 The `ReplayMemory` supports the following methods as
 ```python
 class ReplayMemory:
 
-  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, capacity):
+  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, max_step):
     """ Constructe a ReplayMemory with these properties """
     pass
 
@@ -50,6 +48,10 @@ class ReplayMemory:
 
   def num_episode(self):
     """ Number of episodes currently stored in this ReplayMemory. (const method) """
+    pass
+
+  def pub_bytes(self, topic, message):
+    """ Publish a message to the topic, can be received by sub_bytes(topic) """
     pass
 
   def new_episode(self):
@@ -98,14 +100,15 @@ The class `ReplayMemoryServer` supports following methods
 ```python
 class ReplayMemoryServer
   # Read-only properties
+  rem                # Replay Memory
   total_episodes
   total_caches
   total_steps
 
-  def __init__(self, replay_memory, n_caches):
+  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, max_step, pub_endpoint, n_caches):
     """ Initialize a ReplayMemoryServer
 
-    :param  replay_memory:  a configured ReplayMemory instance
+    :param  pub_endpoint:   endpoint for PUB/SUB protocal
     :param  n_caches:       number of caches kept at the server side """
     pass
 
@@ -161,15 +164,18 @@ A `ReplayMemoryClient` is usually used in an actor worker to store generated exp
 with the remote `ReplayMemoryServer`. The class supports the following methods
 ```python
 class ReplayMemoryClient
+  # Read-only properties
+  rem                # Replay Memory
 
-  def __init__(self, req_endpoint, push_endpoint, capacity):
+  def __init__(self, sub_endpoint, req_endpoint, push_endpoint, max_step):
     """ Initialize a ReplayMemoryClient
 
     This function call will construct a ReplayMemory, with sizes synchronized from the remote ReplayMemoryServer.
 
+    :param  sub_endpoint: endpoint for PUB/SUB protocal
     :param  req_endpoint: endpoint for REP/REQ protocal
     :param  push_endpoint: endpoint for PUSH/PULL protocal
-    :param  capacity: ReplayMemory's capacity """
+    :param  max_step: ReplayMemory's max_step """
     pass
 
   def sync_sizes(self):
@@ -182,6 +188,14 @@ class ReplayMemoryClient
 
   def push_cache(self):
     """ Construct and push a cache to the server. Should be called periodically. """
+    pass
+
+  def sub_bytes(self, topic):
+    """ Subscribe to messages of topic
+
+    This function call will block until a message is received.
+
+    :rtype: str """
     pass
 ```
 

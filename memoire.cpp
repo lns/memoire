@@ -40,26 +40,36 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("prob_size", &RM::prob_size)
     .def_readonly("value_size", &RM::value_size)
     .def_readonly("entry_size", &RM::entry_size)
-    .def_readonly("capacity", &RM::capacity)
+    .def_readonly("max_step", &RM::max_step)
     .def_readonly("uuid", &RM::uuid)
-    .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("priority_exponent", &RM::priority_exponent)
-    .def_readwrite("td_lambda", &RM::td_lambda)
+    .def_readwrite("mix_lambda", &RM::mix_lambda)
     .def_readwrite("frame_stack", &RM::frame_stack)
     .def_readwrite("multi_step", &RM::multi_step)
     .def_readwrite("cache_size", &RM::cache_size)
     .def_readwrite("max_episode", &RM::max_episode)
     .def_readwrite("reuse_cache", &RM::reuse_cache)
-    .def_property("rwd_coeff",
+    .def_property("discount_factor",
       [](RM& rm) {
         py::list l;
-        for(int i=0; i<MAX_RWD_DIM; i++)
-          l.append(rm.rwd_coeff[i]);
+        for(int i=0; i<std::min<int>(rm.reward_size, MAX_RWD_DIM); i++)
+          l.append(rm.discount_factor[i]);
         return l;
       },
       [](RM& rm, py::list l) {
-        for(int i=0; i<MAX_RWD_DIM and i<(int)l.size(); i++)
-          rm.rwd_coeff[i] = py::cast<float>(l[i]);
+        for(int i=0; i<std::min<int>(MAX_RWD_DIM, l.size()); i++)
+          rm.discount_factor[i] = py::cast<float>(l[i]);
+      })
+    .def_property("reward_coeff",
+      [](RM& rm) {
+        py::list l;
+        for(int i=0; i<std::min<int>(rm.reward_size, MAX_RWD_DIM); i++)
+          l.append(rm.reward_coeff[i]);
+        return l;
+      },
+      [](RM& rm, py::list l) {
+        for(int i=0; i<std::min<int>(MAX_RWD_DIM, l.size()); i++)
+          rm.reward_coeff[i] = py::cast<float>(l[i]);
       })
     .def_property("cache_flags",
       [](RM& rm) {
@@ -80,7 +90,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         "reward_size"_a,
         "prob_size"_a,
         "value_size"_a,
-        "capacity"_a)
+        "max_step"_a)
     .def("print_info", [](RM& rem) { rem.print_info(); })
     .def("num_episode", &RM::num_episode)
     .def("new_episode", &RM::new_episode)
@@ -107,18 +117,31 @@ PYBIND11_MODULE(memoire /* module name */, m) {
 
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const char*, const char*, const char*, size_t>(),
-        "req_endpoint"_a, "push_endpoint"_a, "sub_endpoint"_a, "capacity"_a)
-    .def_readonly("prm", &RMC::prm)
+        "req_endpoint"_a, "push_endpoint"_a, "sub_endpoint"_a, "max_step"_a)
+    .def_readonly("rem", &RMC::prm)
     .def("sync_sizes", &RMC::sync_sizes)
     .def("update_counter", &RMC::update_counter)
     .def("push_cache", &RMC::push_cache)
     .def("sub_bytes", &RMC::sub_bytes);
 
   py::class_<RMS>(m, "ReplayMemoryServer")
+    .def_readonly("rem", &RMS::rem) // Actually, the content of rem is readwrite
     .def_readonly("total_caches", &RMS::total_caches)
     .def_readonly("total_episodes", &RMS::total_episodes)
     .def_readonly("total_steps", &RMS::total_steps)
-    .def(py::init<RM*, int>(), "replay_memory"_a, "n_caches"_a)
+    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t capa,
+            const char * pub_ep, int n_caches) {
+          return std::unique_ptr<RMS>(new RMS(ss,as,rs,ps,vs,capa,&lcg64,pub_ep,n_caches));
+        }),
+        "state_size"_a,
+        "action_size"_a,
+        "reward_size"_a,
+        "prob_size"_a,
+        "value_size"_a,
+        "max_step"_a,
+        "pub_endpoint"_a,
+        "n_caches"_a)
+    .def("print_info", [](RMS& rms) { rms.print_info(); })
     .def("rep_worker_main", [](RMS& s, const char * ep, typename RM::Mode m) {
         py::gil_scoped_release release;
         s.rep_worker_main(ep,m);
@@ -138,17 +161,17 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("pub_bytes", &RMS::pub_bytes)
     .def("get_batch", [](RMS& s,
           size_t batch_size) {
-        size_t stack_size = s.prm->frame_stack;
-        pyarr_char prev_s({batch_size, stack_size, s.prm->state_size});
-        pyarr_float prev_a({batch_size, s.prm->action_size});
-        pyarr_float prev_r({batch_size, s.prm->reward_size});
-        pyarr_float prev_p({batch_size, s.prm->prob_size});
-        pyarr_float prev_v({batch_size, s.prm->value_size});
-        pyarr_char next_s({batch_size, stack_size, s.prm->state_size});
-        pyarr_float next_a({batch_size, s.prm->action_size});
-        pyarr_float next_r({batch_size, s.prm->reward_size});
-        pyarr_float next_p({batch_size, s.prm->prob_size});
-        pyarr_float next_v({batch_size, s.prm->value_size});
+        size_t stack_size = s.rem.frame_stack;
+        pyarr_char prev_s({batch_size, stack_size, s.rem.state_size});
+        pyarr_float prev_a({batch_size, s.rem.action_size});
+        pyarr_float prev_r({batch_size, s.rem.reward_size});
+        pyarr_float prev_p({batch_size, s.rem.prob_size});
+        pyarr_float prev_v({batch_size, s.rem.value_size});
+        pyarr_char next_s({batch_size, stack_size, s.rem.state_size});
+        pyarr_float next_a({batch_size, s.rem.action_size});
+        pyarr_float next_r({batch_size, s.rem.reward_size});
+        pyarr_float next_p({batch_size, s.rem.prob_size});
+        pyarr_float next_v({batch_size, s.rem.value_size});
         pyarr_float entry_weight_arr({batch_size,});
         bool ret = s.get_batch(batch_size,
           prev_s.mutable_data(),

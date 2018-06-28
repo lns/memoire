@@ -6,11 +6,9 @@ import time
 from memoire import ReplayMemory, ReplayMemoryServer, ReplayMemoryClient, Bind, Conn
 from threading import Thread
 
-client = ReplayMemoryClient("tcp://localhost:5561", "tcp://localhost:5562", 65536)
-rem = client.prm
+client = ReplayMemoryClient("tcp://localhost:5560", "tcp://localhost:5561", "tcp://localhost:5562", 65536)
+rem = client.rem
 rem.print_info()
-print(rem.rwd_coeff)
-print(rem.cache_flags)
 
 s = np.ndarray((rem.state_size), dtype=np.uint8)
 a = np.ndarray((rem.action_size), dtype=np.float32)
@@ -18,15 +16,18 @@ r = np.ndarray((rem.reward_size), dtype=np.float32)
 p = np.ndarray((rem.prob_size), dtype=np.float32)
 v = np.ndarray((rem.value_size), dtype=np.float32)
 
-for n_games in range(10):
-  rem.new_episode()
-  for step in range(1000):
-    s.fill(n_games)
-    a[0] = step
-    r[0] = 1
-    v[0] = -1
-    rem.add_entry(s, a, r, p, v, weight=1.0)
-  rem.close_episode()
-  client.update_counter()
-  client.push_cache()
+try:
+  for n_games in range(10):
+    rem.new_episode()
+    for step in range(1000):
+      s.fill(n_games)
+      a[0] = step
+      r[0] = 1
+      v[0] = -1
+      rem.add_entry(s, a, r, p, v, weight=1.0)
+    rem.close_episode()
+    client.update_counter()
+    client.push_cache()
+except KeyboardInterrupt:
+  os.kill(os.getpid(), 9)
 

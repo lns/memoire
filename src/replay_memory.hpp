@@ -315,7 +315,7 @@ public:
   {
   public:
     DataSample& get(size_t idx, const ReplayMemory * p) {
-      assert(idx < (size_t)p->cache_size);
+      assert(idx < p->cache_size);
       return *reinterpret_cast<DataSample*>((char*)(this) + DataSample::nbytes(p) * idx);
     }
     static size_t nbytes(const ReplayMemory * p) {
@@ -341,20 +341,20 @@ public:
   const size_t value_size;           ///< num of discounted future reward sum
 
   const size_t entry_size;           ///< size of each entry (in bytes)
-  const size_t capacity;             ///< max number of steps can be stored
+  const size_t max_step;             ///< max number of steps can be stored
 
-  float discount_factor;             ///< discount factor for calculate R with rewards
+  size_t max_episode;                ///< Max number of stored episodes allowed (0 for not checking)
   float priority_exponent;           ///< exponent of priority term (default 0.5)
-  float td_lambda;                   ///< mixture factor for TD
+  float mix_lambda;                  ///< mixture factor for computing multi-step return
   int frame_stack;                   ///< Number of frames stacked for each state (default 1)
   int multi_step;                    ///< Number of steps between prev and next (default 1)
-  int cache_size;                    ///< Cache size, number of sample in a cache
-  int max_episode;                   ///< Max number of stored episodes allowed (0 or neg for not checking)
+  unsigned cache_size;               ///< Cache size, number of sample in a cache
   int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
-  float rwd_coeff[MAX_RWD_DIM];      ///< rwd coefficient
+  float discount_factor[MAX_RWD_DIM];///< discount factor for calculate R with rewards
+  float reward_coeff[MAX_RWD_DIM];   ///< reward coefficient
   uint8_t cache_flags[10];           ///< Whether we should collect prev s,a,r,p,v and next s,a,r,p,v in caches
 
-  size_t uuid;                       ///< uuid for current instance
+  uint32_t uuid;                     ///< uuid for current instance
 
 protected:
   Vector<T> data;                    ///< Actual data of all samples
@@ -378,7 +378,7 @@ public:
       size_t r_size,
       size_t p_size,
       size_t v_size,
-      size_t capa,
+      size_t m_step,
       qlib::RNG * prt_rng) :
     state_size{s_size},
     action_size{a_size},
@@ -386,18 +386,18 @@ public:
     prob_size{p_size},
     value_size{v_size},
     entry_size{T::nbytes(this)},
-    capacity{capa},
-    cache_size{0},
+    max_step{m_step},
     max_episode{0},
+    cache_size{0},
     reuse_cache{0},
     uuid{0},
     data{entry_size},
-    prt{prt_rng, static_cast<int>(capacity)},
+    prt{prt_rng, static_cast<int>(max_step)},
     rng{prt_rng}
   {
-    data.reserve(capacity);
+    data.reserve(max_step);
     uuid = qlib::get_nsec();
-    for(auto&& each : rwd_coeff)
+    for(auto&& each : reward_coeff)
       each = 1.0f;
     for(auto&& each : cache_flags)
       each = 1;
@@ -405,22 +405,29 @@ public:
 
   void print_info(FILE * f = stderr) const
   {
-    fprintf(f, "uuid:          0x%lx\n", uuid);
+    fprintf(f, "uuid:          0x%08x\n", uuid);
     fprintf(f, "state_size:    %lu\n", state_size);
     fprintf(f, "action_size:   %lu\n", action_size);
     fprintf(f, "reward_size:   %lu\n", reward_size);
     fprintf(f, "prob_size:     %lu\n", prob_size);
     fprintf(f, "value_size:    %lu\n", value_size);
-    fprintf(f, "capacity:      %lu\n", capacity);
-    fprintf(f, "discount_f:    %lf\n", discount_factor);
+    fprintf(f, "max_step:      %lu\n", max_step);
+    fprintf(f, "max_episode:   %lu\n", max_episode);
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
-    fprintf(f, "td_lambda:     %lf\n", td_lambda);
+    fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
     fprintf(f, "frame_stack:   %d\n",  frame_stack);
     fprintf(f, "multi_step:    %d\n",  multi_step);
-    fprintf(f, "cache_size:    %d\n",  cache_size);
-    fprintf(f, "max_episode:   %d\n",  max_episode);
+    fprintf(f, "cache_size:    %u\n",  cache_size);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
+    fprintf(f, "discount_f:    [");
+    for(int i=0; i<std::min<int>(reward_size, MAX_RWD_DIM); i++)
+      fprintf(f, "%lf,", discount_factor[i]);
+    fprintf(f, "]\n");
+    fprintf(f, "reward_coeff:  [");
+    for(int i=0; i<std::min<int>(reward_size, MAX_RWD_DIM); i++)
+      fprintf(f, "%lf,", reward_coeff[i]);
+    fprintf(f, "]\n");
     fprintf(f, "cache sizes: %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu, %lu: %ld\n",
         DataSample::prev_action_offset(this) - DataSample::prev_state_offset(this),
         DataSample::prev_reward_offset(this) - DataSample::prev_action_offset(this),
@@ -445,7 +452,7 @@ protected:
   long get_offset_for_new() const {
     long offset = 0;
     if(episode.size() > 0)
-      offset = (episode.back().offset + episode.back().length) % capacity;
+      offset = (episode.back().offset + episode.back().length) % max_step;
     return offset;
   }
 
@@ -453,9 +460,9 @@ protected:
    * Get length for a new episode
    */
   long get_length_for_new() const {
-    long length = capacity;
+    long length = max_step;
     if(episode.size() > 0)
-      length = (episode.front().offset - episode.back().offset - episode.back().length) % capacity;
+      length = (episode.front().offset - episode.back().offset - episode.back().length) % max_step;
     return length;
   }
 
@@ -471,7 +478,7 @@ protected:
       std::lock_guard<std::mutex> guard(prt_mutex);
       const auto& front = episode.front();
       for(int i=0; i<front.length; i++) {
-        long idx = (front.offset + i) % capacity;
+        long idx = (front.offset + i) % max_step;
         prt.set_weight(idx, 0);
       }
     }
@@ -488,15 +495,15 @@ protected:
     // TODO: different discount_factor for different dimension of reward.
     const auto& gamma = discount_factor;
     for(int i=epi.length-2; i>=0; i--) { // skip the terminal state
-      long post = (epi.offset + i + 1) % capacity;
-      long prev = (epi.offset + i) % capacity;
+      long post = (epi.offset + i + 1) % max_step;
+      long prev = (epi.offset + i) % max_step;
       auto post_reward = data[post].reward(this);
       auto post_value  = data[post].value(this);
       auto prev_reward = data[prev].reward(this);
       //auto prev_value  = data[prev].value(this);
       for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
         // TD-Lambda
-        prev_reward[j] += td_lambda * gamma * post_reward[j] + (1-td_lambda) * gamma * post_value[j];
+        prev_reward[j] += mix_lambda * gamma[j] * post_reward[j] + (1-mix_lambda) * gamma[j] * post_value[j];
         // GAE
         //prev_reward[j] += gamma * post_value[j] - prev_value[j] + gamma * gae_lambda * post_reward[j];
       }
@@ -509,20 +516,20 @@ protected:
   void update_weight(const Episode& epi) {
     // TODO: Optimize this
     for(int i=0; i<std::min<int>(frame_stack-1, epi.length); i++) {
-      long idx = (epi.offset + i) % capacity;
+      long idx = (epi.offset + i) % max_step;
       prt.set_weight(idx, 0.0);
     }
     for(int i=0; i<std::min<int>(multi_step, epi.length); i++) {
-      long idx = (epi.offset + epi.length - 1 - i) % capacity;
+      long idx = (epi.offset + epi.length - 1 - i) % max_step;
       prt.set_weight(idx, 0.0);
     }
     for(int i=(frame_stack-1); i<epi.length-multi_step; i++) {
-      long idx = (epi.offset + i) % capacity;
+      long idx = (epi.offset + i) % max_step;
       auto& prev = data[idx];
       // R is computed with TD-lambda, while V is the original value in prediction
       float priority = 0;
       for(int i=0; i<(int)prev.reward(this).size(); i++)
-        priority += rwd_coeff[i] * fabs(prev.reward(this)[i] - prev.value(this)[i]);
+        priority += reward_coeff[i] * fabs(prev.reward(this)[i] - prev.value(this)[i]);
       priority = pow(priority, priority_exponent);
       prt.set_weight(idx, prt.get_weight(idx) * priority);
     }
@@ -550,7 +557,7 @@ public:
       std::lock_guard<std::mutex> guard(prt_mutex);
       update_weight(episode.back());
     }
-    while(max_episode > 0 and episode.size() > (size_t)max_episode)
+    while(max_episode > 0 and episode.size() > max_episode)
       remove_oldest();
   }
 
@@ -580,7 +587,7 @@ public:
       //qlog_info("new_length: %ld, get_length_for_new: %ld\n", new_length, get_length_for_new());
       remove_oldest();
     }
-    long idx = (new_offset + new_length) % capacity;
+    long idx = (new_offset + new_length) % max_step;
     auto& entry = data[idx];
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v);
     prt.set_weight_without_update(idx, weight); // will be update by update_weight() later in close_episode()
@@ -598,12 +605,12 @@ public:
       qlog_warning("%s() failed as the ReplayMemory is empty.\n", __func__);
       return false;
     }
-    for(size_t i=0; i<(size_t)cache_size; i++) {
+    for(size_t i=0; i<cache_size; i++) {
       long idx = prt.sample_index(); 
       DataSample& s = p_cache->get(i, this);
       // add to batch
       for(int j=frame_stack-1; j>=0; j--) {
-        auto& prev_entry = data[(idx - j) % capacity];
+        auto& prev_entry = data[(idx - j) % max_step];
         prev_entry.to_memory(this, (frame_stack-1-j),
             s.prev_state(this).data(), nullptr, nullptr, nullptr, nullptr);
         if(j==0)
@@ -612,7 +619,7 @@ public:
               s.prev_prob(this).data(), s.prev_value(this).data());
       }
       for(int j=frame_stack-1; j>=0; j--) {
-        auto& next_entry = data[(idx - j + multi_step) % capacity];
+        auto& next_entry = data[(idx - j + multi_step) % max_step];
         next_entry.to_memory(this, (frame_stack-1-j),
             s.next_state(this).data(), nullptr, nullptr, nullptr, nullptr);
         if(j==0)
@@ -640,7 +647,7 @@ public:
 
     int type;            // Message type
     int length;          // length of payload (in bytes)
-    uint64_t sender;     // sender's uuid
+    uint32_t sender;     // sender's uuid
     float sum_weight;    // sum of weight, used by ProtocalCache
     DataEntry payload;   // placeholder for actual payload. Note that sizeof(DataEntry) is 0.
   };

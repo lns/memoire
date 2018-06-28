@@ -13,7 +13,7 @@ public:
   typedef typename RM::Message Message;
   typedef typename RM::DataCache Cache;
 
-  RM * prm; // TODO: This may cause use after free error!
+  RM rem;
   void * ctx;
   void * pssoc;                      ///< PUB/SUB socket
 
@@ -28,34 +28,42 @@ public:
   size_t total_steps;                ///< counter of total steps
   std::mutex counter_mutex;
 
-  ReplayMemoryServer(RM * p_rem, const char* pub_endpoint, int n_caches) : prm{p_rem}, ctx{nullptr},
-    caches{Cache::nbytes(prm)}, cache_prt{prm->rng, n_caches}, total_caches{0},
-    total_episodes{0}, total_steps{0}
+  ReplayMemoryServer(size_t s_size, size_t a_size, size_t r_size, size_t p_size, size_t v_size,
+      size_t max_step, qlib::RNG * prt_rng, const char* pub_endpoint, int n_caches)
+    : rem{s_size, a_size, r_size, p_size, v_size, max_step, prt_rng}, ctx{nullptr},
+    caches{0}, cache_prt{prt_rng, n_caches},
+    total_caches{0}, total_episodes{0}, total_steps{0}
   {
     ctx = zmq_ctx_new(); qassert(ctx);
     caches.resize(n_caches);
-    sample_index.resize(n_caches, 0);
-    cache_index = 0;
     // PUB endpoint
     if(pub_endpoint and strcmp(pub_endpoint, "")) {
       pssoc = zmq_socket(ctx, ZMQ_PUB); qassert(pssoc);
-      ZMQ_CALL(zmq_bind(soc, endpoint));
+      ZMQ_CALL(zmq_bind(pssoc, pub_endpoint));
     }
   }
 
-  ~ReplayMemoryServer() { 
+  ~ReplayMemoryServer() {
     zmq_close(pssoc);
     zmq_ctx_destroy(ctx);
+  }
+
+  void print_info(FILE * f = stderr) const
+  {
+    fprintf(f, "total_episodes:%lu\n", total_episodes);
+    fprintf(f, "total_caches:  %lu\n", total_caches);
+    fprintf(f, "total_steps:   %lu\n", total_steps);
+    rem.print_info(f);
   }
 
   /**
    * Publish a byte string to clients
    */
-  void pub_bytes(const std::string& topic, const std::string& data) {
+  void pub_bytes(const std::string& topic, const std::string& message) {
     if(not pssoc)
       qlog_warning("PUB/SUB socket is not opened.\n");
     ZMQ_CALL(zmq_send(pssoc, topic.data(), topic.size(), ZMQ_SNDMORE));
-    ZMQ_CALL(zmq_send(pssoc, data.data(), data.size(), 0));
+    ZMQ_CALL(zmq_send(pssoc, message.data(), message.size(), 0));
   }
   
   /**
@@ -94,6 +102,10 @@ public:
       qlog_warning("get_batch() failed as caches are not all filled (%lu < %lu).\n", total_caches, caches.size());
       return false;
     }
+    if(cache_prt.get_weight_sum() <= 0.0) {
+      qlog_warning("get_batch() failed as too many pull workers are occupying caches.\n");
+      return false;
+    }
     for(size_t i=0; i<batch_size; i++) {
       long c_idx; // cache index
       int s_idx; // sample index
@@ -101,8 +113,8 @@ public:
         std::lock_guard<std::mutex> guard(cache_mutex);
         c_idx = cache_prt.sample_index();
         s_idx = sample_index[c_idx];
-        if(s_idx >= prm->cache_size) {
-          if(prm->reuse_cache) {
+        if(s_idx >= rem.cache_size) {
+          if(rem.reuse_cache) {
             s_idx = sample_index[c_idx] = 0;
           } else {
             qlog_warning("all caches pushed by actors are used. (total_caches: %lu)\n", total_caches);
@@ -110,13 +122,13 @@ public:
           }
         }
         sample_index[c_idx] += 1;
-        if(sample_index[c_idx] >= prm->cache_size and !prm->reuse_cache) { // cache is fully used
+        if(sample_index[c_idx] >= rem.cache_size and !rem.reuse_cache) { // cache is fully used
           cache_prt.set_weight(c_idx, 0.0);
         }
       }
       // add caches[c_idx][s_idx] to batch
-      auto& s = caches[c_idx].get(s_idx, prm);
-      s.to_memory(prm, i,
+      auto& s = caches[c_idx].get(s_idx, &rem);
+      s.to_memory(&rem, i,
           prev_s, prev_a, prev_r, prev_p, prev_v,
           next_s, next_a, next_r, next_p, next_v,
           entry_weight_arr);
@@ -134,9 +146,9 @@ public:
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
-    int reqbuf_size = prm->reqbuf_size();
+    int reqbuf_size = rem.reqbuf_size();
     char * reqbuf = (char*)malloc(reqbuf_size); qassert(reqbuf);
-    int repbuf_size = prm->repbuf_size();
+    int repbuf_size = rem.repbuf_size();
     char * repbuf = (char*)malloc(repbuf_size); qassert(repbuf);
     Message * args = reinterpret_cast<Message*>(reqbuf);
     Message * rets = reinterpret_cast<Message*>(repbuf);
@@ -144,12 +156,12 @@ public:
     while(true) {
       ZMQ_CALL(size = zmq_recv(soc, reqbuf, reqbuf_size, 0)); qassert(size <= reqbuf_size);
       rets->type = args->type;
-      rets->sender = prm->uuid;
+      rets->sender = rem.uuid;
       if(args->type == Message::ProtocalSizes) {
         // return sizes
         RM * p = reinterpret_cast<RM *>(&rets->payload);
         // memcpy. Only primary objects are valid.
-        memcpy(p, prm, sizeof(RM));
+        memcpy(p, &rem, sizeof(RM));
         //qlog_info("REP: ProtocalSizes\n");
         ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
       }
@@ -182,41 +194,46 @@ public:
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
-    int buf_size = prm->pushbuf_size();
-    char * buf = (char*)malloc(buf_size); qassert(buf);
-    Message * args = reinterpret_cast<Message*>(buf);
+    if(caches.entry_size != Cache::nbytes(&rem)) { 
+      size_t n_caches = caches.size();
+      caches.~Vector<Cache>();
+      new(&caches) Vector<Cache>(Cache::nbytes(&rem));
+      caches.resize(n_caches);
+      sample_index.resize(n_caches, 0);
+      cache_index = 0;
+    }
+    Mem buf(rem.pushbuf_size());
+    Message * args = reinterpret_cast<Message*>(buf.data());
     int size;
     int idx;
-    const size_t expected_size = Cache::nbytes(prm);
+    const size_t expected_size = Cache::nbytes(&rem);
     if(true) {
       std::lock_guard<std::mutex> guard(cache_mutex);
       cache_prt.set_weight(cache_index, 0.0);
       idx = cache_index;
       cache_index = (cache_index + 1) % caches.size();
-      total_caches += 1;
     }
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); qassert(size <= buf_size);
+      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size <= buf.size());
       if(args->type == Message::ProtocalCache) {
         qassert(args->length == (int)expected_size);
-        ZMQ_CALL(size = zmq_recv(soc, &caches[idx], expected_size, 0));
         //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
+        ZMQ_CALL(size = zmq_recv(soc, &caches[idx], expected_size, 0));
         qassert(size == (int)expected_size);
         sample_index[idx] = 0;
         if(true) {
           std::lock_guard<std::mutex> guard(cache_mutex);
           cache_prt.set_weight(idx, args->sum_weight); // payload as sum of weight
+          total_caches += 1;
           cache_prt.set_weight(cache_index, 0.0);
           idx = cache_index;
           cache_index = (cache_index + 1) % caches.size();
-          total_caches += 1;
         }
       }
       else
         qthrow("Unknown args->type");
     }
     // never
-    free(buf);
     zmq_close(soc);
   }
 
@@ -246,6 +263,8 @@ public:
   void pull_proxy_main(const char * front_ep, const char * back_ep) {
     proxy_main(ZMQ_PULL, front_ep, ZMQ_PUSH, back_ep);
   }
+
+  // TODO: Proxy for PUB/SUB protocal
 
 };
 
