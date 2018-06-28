@@ -179,10 +179,10 @@ public:
     while(true) {
       ZMQ_CALL(size = zmq_recv(soc, buf, buf_size, 0)); qassert(size <= buf_size);
       if(args->type == Message::ProtocalCache) {
-        qassert(args->length == expected_size);
+        qassert(args->length == (int)expected_size);
         ZMQ_CALL(size = zmq_recv(soc, &caches[idx], expected_size, 0));
         //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
-        qassert(size == expected_size);
+        qassert(size == (int)expected_size);
         sample_index[idx] = 0;
         if(true) {
           std::lock_guard<std::mutex> guard(cache_mutex);
