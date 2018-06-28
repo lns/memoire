@@ -315,7 +315,7 @@ public:
   {
   public:
     DataSample& get(size_t idx, const ReplayMemory * p) {
-      assert(idx < p->cache_size);
+      assert(idx < (size_t)p->cache_size);
       return *reinterpret_cast<DataSample*>((char*)(this) + DataSample::nbytes(p) * idx);
     }
     static size_t nbytes(const ReplayMemory * p) {
@@ -494,7 +494,7 @@ protected:
       auto post_value  = data[post].value(this);
       auto prev_reward = data[prev].reward(this);
       //auto prev_value  = data[prev].value(this);
-      for(int j=0; j<prev_reward.size(); j++) { // OPTIMIZE:
+      for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
         // TD-Lambda
         prev_reward[j] += td_lambda * gamma * post_reward[j] + (1-td_lambda) * gamma * post_value[j];
         // GAE
@@ -521,7 +521,7 @@ protected:
       auto& prev = data[idx];
       // R is computed with TD-lambda, while V is the original value in prediction
       float priority = 0;
-      for(int i=0; i<prev.reward(this).size(); i++)
+      for(int i=0; i<(int)prev.reward(this).size(); i++)
         priority += rwd_coeff[i] * fabs(prev.reward(this)[i] - prev.value(this)[i]);
       priority = pow(priority, priority_exponent);
       prt.set_weight(idx, prt.get_weight(idx) * priority);
@@ -550,7 +550,7 @@ public:
       std::lock_guard<std::mutex> guard(prt_mutex);
       update_weight(episode.back());
     }
-    while(max_episode > 0 and episode.size() > max_episode)
+    while(max_episode > 0 and episode.size() > (size_t)max_episode)
       remove_oldest();
   }
 
@@ -598,7 +598,7 @@ public:
       qlog_warning("%s() failed as the ReplayMemory is empty.\n", __func__);
       return false;
     }
-    for(size_t i=0; i<cache_size; i++) {
+    for(size_t i=0; i<(size_t)cache_size; i++) {
       long idx = prt.sample_index(); 
       DataSample& s = p_cache->get(i, this);
       // add to batch

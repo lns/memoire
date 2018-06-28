@@ -97,6 +97,10 @@ For the meaning of "REQ/REP", "PULL/PUSH" protocal, as well as "endpoint" and "p
 The class `ReplayMemoryServer` supports following methods
 ```python
 class ReplayMemoryServer
+  # Read-only properties
+  total_episodes
+  total_caches
+  total_steps
 
   def __init__(self, replay_memory, n_caches):
     """ Initialize a ReplayMemoryServer
