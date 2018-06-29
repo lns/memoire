@@ -112,14 +112,18 @@ public:
     if(not pssoc)
       qlog_error("PUB/SUB socket is not connected.\n");
     ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
+    thread_local Mem topicbuf(256);
     int size;
     while(true) {
+      memset(topicbuf.data(), 0, topicbuf.size());
       memset(subbuf.data(), 0, subbuf.size());
       // Recv topic
-      ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0)); qassert(size <= (int)subbuf.size());
-      //qlog_info("topic: %s\n", std::string((char*)subbuf.data(), subbuf.size()).c_str());
+      ZMQ_CALL(size = zmq_recv(pssoc, topicbuf.data(), topicbuf.size(), 0)); qassert(size <= (int)topicbuf.size());
       // Recv Message
       ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0));
+      if(strcmp((const char*)topicbuf.data(), topic.data())) { // topic mismatch
+        continue;
+      }
       if(not (size <= (int)subbuf.size())) {
         subbuf.resize(size);
         qlog_warning("Resize subbuf to %lu\n", subbuf.size());

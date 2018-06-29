@@ -16,7 +16,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire, ver 18.05.04, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire, ver 18.06.28, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;

@@ -16,8 +16,14 @@ for th in threads:
   th.start()
 
 try:
-  time.sleep(3)
-  server.pub_bytes("M01", "Hello!")
+  time.sleep(1)
+  server.pub_bytes("M01", "Hello 1")
+  time.sleep(1)
+  server.pub_bytes("M02", "Hello 2" + ' '*512 + '%')
+  time.sleep(1)
+  server.pub_bytes("M01", "Hello 3")
+  time.sleep(1)
+  server.pub_bytes("M02", "Hello 4" )
 except KeyboardInterrupt:
   pass
 os.kill(os.getpid(), 9)
