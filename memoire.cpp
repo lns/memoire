@@ -122,7 +122,10 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("sync_sizes", &RMC::sync_sizes)
     .def("update_counter", &RMC::update_counter)
     .def("push_cache", &RMC::push_cache)
-    .def("sub_bytes", &RMC::sub_bytes);
+    .def("sub_bytes", [](RMC& rmc, std::string topic) {
+        std::string ret = rmc.sub_bytes(topic);
+        return py::bytes(ret);
+      }, "topic"_a);
 
   py::class_<RMS>(m, "ReplayMemoryServer")
     .def_readonly("rem", &RMS::rem) // Actually, the content of rem is readwrite
