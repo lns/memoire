@@ -113,12 +113,13 @@ PYBIND11_MODULE(memoire /* module name */, m) {
 
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const char*, const char*, const char*>(),
-        "req_endpoint"_a, "push_endpoint"_a, "sub_endpoint"_a)
+        "sub_endpoint"_a, "req_endpoint"_a, "push_endpoint"_a)
     .def_readonly("rem", &RMC::prm)
     .def("sync_sizes", &RMC::sync_sizes, "max_step"_a)
     .def("update_counter", &RMC::update_counter)
     .def("push_cache", &RMC::push_cache)
     .def("sub_bytes", [](RMC& rmc, std::string topic) {
+        py::gil_scoped_release release;
         std::string ret = rmc.sub_bytes(topic);
         return py::bytes(ret);
       }, "topic"_a);
