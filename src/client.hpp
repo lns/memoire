@@ -166,3 +166,5 @@ public:
 
 };
 
+typedef ReplayMemoryClient<RM> RMC;
+

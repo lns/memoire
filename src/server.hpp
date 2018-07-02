@@ -269,3 +269,5 @@ public:
 
 };
 
+typedef ReplayMemoryServer<RM> RMS;
+

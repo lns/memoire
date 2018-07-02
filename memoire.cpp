@@ -24,10 +24,6 @@ typedef py::array_t<int, py::array::c_style> pyarr_int;
 typedef py::array_t<uint64_t, py::array::c_style> pyarr_ulong;
 typedef py::array_t<uint8_t, py::array::c_style> pyarr_char;
 
-typedef ReplayMemory<uint8_t, float, float> RM;
-typedef ReplayMemoryClient<RM> RMC;
-typedef ReplayMemoryServer<RM> RMS;
-
 static qlib::LCG64 lcg64;
 
 PYBIND11_MODULE(memoire /* module name */, m) {

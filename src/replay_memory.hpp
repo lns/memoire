@@ -663,3 +663,8 @@ public:
 
 };
 
+/**
+ * Default data type for ReplayMemory 
+ */
+typedef ReplayMemory<uint8_t, float, float> RM;
+
