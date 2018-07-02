@@ -6,7 +6,8 @@ import time
 from memoire import ReplayMemory, ReplayMemoryServer, ReplayMemoryClient, Bind, Conn
 from threading import Thread
 
-client = ReplayMemoryClient("tcp://localhost:5560", "tcp://localhost:5561", "tcp://localhost:5562", 65536)
+client = ReplayMemoryClient("tcp://localhost:5560", "tcp://localhost:5561", "tcp://localhost:5562")
+client.sync_sizes(65536)
 rem = client.rem
 rem.print_info()
 
@@ -16,6 +17,7 @@ r = np.ndarray((rem.reward_size), dtype=np.float32)
 p = np.ndarray((rem.prob_size), dtype=np.float32)
 v = np.ndarray((rem.value_size), dtype=np.float32)
 
+time.sleep(1)
 try:
   for n_games in range(10):
     rem.new_episode()

@@ -104,7 +104,7 @@ public:
       return false;
     }
     if(cache_prt.get_weight_sum() <= 0.0) {
-      qlog_warning("get_batch() failed as too many pull workers are occupying caches.\n");
+      qlog_warning("get_batch() failed as no cached samples are available. (reuse_cache? too many pull_workers?)\n");
       return false;
     }
     for(size_t i=0; i<batch_size; i++) {

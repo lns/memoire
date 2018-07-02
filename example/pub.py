@@ -9,12 +9,6 @@ sizes = (1,1,1,0,1)
 server = ReplayMemoryServer(*sizes, max_step=0, n_caches=0, pub_endpoint="tcp://*:5560")
 server.rem.print_info()
 
-threads = []
-threads.append(Thread(target=server.rep_worker_main, args=("tcp://*:5561", Bind)))
-
-for th in threads:
-  th.start()
-
 try:
   time.sleep(1)
   server.pub_bytes("M01", "Hello 1")

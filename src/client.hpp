@@ -32,8 +32,7 @@ public:
   ReplayMemoryClient(
       const char * sub_endpoint,
       const char * req_endpoint,
-      const char * push_endpoint,
-      size_t max_step) : prm(nullptr), cache_buf(nullptr)
+      const char * push_endpoint) : prm(nullptr), cache_buf(nullptr)
   {
     ctx = zmq_ctx_new(); qassert(ctx);
     if(sub_endpoint and 0!=strcmp(sub_endpoint, "")) {
@@ -57,8 +56,8 @@ public:
     rep  = reinterpret_cast<Message*>(repbuf.data());
     pushbuf.resize(RM::pushbuf_size());
     push = reinterpret_cast<Message*>(pushbuf.data());
-    // Get sizes
-    sync_sizes(max_step);
+    // Empty RM
+    prm = new RM{0,0,0,0,0,0,&lcg64};
   }
 
   ~ReplayMemoryClient() {

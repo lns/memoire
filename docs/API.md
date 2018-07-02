@@ -167,19 +167,23 @@ class ReplayMemoryClient
   # Read-only properties
   rem                # Replay Memory
 
-  def __init__(self, sub_endpoint, req_endpoint, push_endpoint, max_step):
+  def __init__(self, sub_endpoint, req_endpoint, push_endpoint):
     """ Initialize a ReplayMemoryClient
 
     This function call will construct a ReplayMemory, with sizes synchronized from the remote ReplayMemoryServer.
 
     :param  sub_endpoint: endpoint for PUB/SUB protocal
     :param  req_endpoint: endpoint for REP/REQ protocal
-    :param  push_endpoint: endpoint for PUSH/PULL protocal
-    :param  max_step: ReplayMemory's max_step """
+    :param  push_endpoint: endpoint for PUSH/PULL protocal """
     pass
 
-  def sync_sizes(self):
-    """ Manually synchonize sizes from the server """
+  def sync_sizes(self, max_step):
+    """ Manually synchonize sizes from the server
+
+    This function will send a request to the server to query about *_sizes, and reconstruct the local ReplayMemory
+    with the new parameters.
+
+    :param  max_step: local ReplayMemory's max_step """
     pass
 
   def update_counter(self):

@@ -5,7 +5,7 @@ import os
 import time
 from memoire import ReplayMemory, ReplayMemoryServer, ReplayMemoryClient, Bind, Conn
 
-client = ReplayMemoryClient("tcp://localhost:5560", "tcp://localhost:5561", "", 0)
+client = ReplayMemoryClient("tcp://localhost:5560", "", "")
 client.rem.print_info()
 
 try:
