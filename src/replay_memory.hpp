@@ -32,6 +32,8 @@ public:
   typedef _reward_t reward_t;
   typedef float prob_t;        ///< probabilities are saved in float
   typedef _reward_t value_t;   ///< values should have the same type as reward
+  typedef _reward_t qvest_t;   ///< qvalue estimation
+  typedef uint8_t info_t;
 
   /**
    * Memory structure of an entry. Does not own the memory.
@@ -45,7 +47,9 @@ public:
         + p->action_size * sizeof(action_t)
         + p->reward_size * sizeof(reward_t)
         + p->prob_size * sizeof(prob_t)
-        + p->value_size * sizeof(value_t);
+        + p->value_size * sizeof(value_t)
+        + p->qvest_size * sizeof(qvest_t)
+        + p->info_size * sizeof(info_t);
     }
 
     ArrayView<state_t> state(const ReplayMemory * p) {
@@ -84,6 +88,27 @@ public:
       return ArrayView<value_t>(head + offset, p->value_size);
     }
 
+    ArrayView<qvest_t> qvest(const ReplayMemory * p) {
+      char * head = reinterpret_cast<char*>(this);
+      size_t offset = p->state_size * sizeof(state_t)
+        + p->action_size * sizeof(action_t)
+        + p->reward_size * sizeof(reward_t)
+        + p->prob_size * sizeof(prob_t)
+        + p->value_size * sizeof(value_t);
+      return ArrayView<qvest_t>(head + offset, p->qvest_size);
+    }
+
+    ArrayView<info_t> info(const ReplayMemory * p) {
+      char * head = reinterpret_cast<char*>(this);
+      size_t offset = p->state_size * sizeof(state_t)
+        + p->action_size * sizeof(action_t)
+        + p->reward_size * sizeof(reward_t)
+        + p->prob_size * sizeof(prob_t)
+        + p->value_size * sizeof(value_t)
+        + p->qvest_size * sizeof(qvest_t);
+      return ArrayView<info_t>(head + offset, p->info_size);
+    }
+
     /**
      * Copy from memory
      * @param index  denotes the offset in memory
@@ -93,7 +118,9 @@ public:
         const action_t * p_a,
         const reward_t * p_r,
         const prob_t   * p_p,
-        const value_t  * p_v)
+        const value_t  * p_v,
+        const qvest_t  * p_q,
+        const info_t   * p_i)
     {
       if(p_s)
         state(p).from_memory(p_s + index * p->state_size);
@@ -105,6 +132,10 @@ public:
         prob(p).from_memory(p_p + index * p->prob_size);
       if(p_v)
         value(p).from_memory(p_v + index * p->value_size);
+      if(p_q)
+        qvest(p).from_memory(p_q + index * p->qvest_size);
+      if(p_i)
+        info(p).from_memory(p_i + index * p->info_size);
     }
 
     /**
@@ -116,7 +147,9 @@ public:
         action_t * p_a,
         reward_t * p_r,
         prob_t   * p_p,
-        value_t  * p_v)
+        value_t  * p_v,
+        qvest_t  * p_q,
+        info_t   * p_i)
     {
       if(p_s)
         state(p).to_memory(p_s + index * p->state_size);
@@ -128,6 +161,10 @@ public:
         prob(p).to_memory(p_p + index * p->prob_size);
       if(p_v)
         value(p).to_memory(p_v + index * p->value_size);
+      if(p_q)
+        qvest(p).to_memory(p_q + index * p->qvest_size);
+      if(p_i)
+        info(p).to_memory(p_i + index * p->info_size);
     }
 
   };
@@ -158,23 +195,35 @@ public:
     static size_t prev_value_offset(const ReplayMemory * p) {
       return prev_prob_offset(p)   + (p->cache_flags[3] ? p->prob_size   * sizeof(prob_t)   : 0);
     }
-    static size_t next_state_offset(const ReplayMemory * p) {
+    static size_t prev_qvest_offset(const ReplayMemory * p) {
       return prev_value_offset(p)  + (p->cache_flags[4] ? p->value_size  * sizeof(value_t)  : 0);
     }
+    static size_t prev_info_offset(const ReplayMemory * p) {
+      return prev_qvest_offset(p)  + (p->cache_flags[5] ? p->qvest_size  * sizeof(qvest_t)  : 0);
+    }
+    static size_t next_state_offset(const ReplayMemory * p) {
+      return prev_info_offset(p)   + (p->cache_flags[6] ? p->info_size   * sizeof(info_t)   : 0);
+    }
     static size_t next_action_offset(const ReplayMemory * p) {
-      return ceil<4>(next_state_offset(p) + (p->cache_flags[5] ? p->frame_stack * p->state_size * sizeof(state_t) : 0));
+      return ceil<4>(next_state_offset(p) + (p->cache_flags[7] ? p->frame_stack * p->state_size * sizeof(state_t) : 0));
     }
     static size_t next_reward_offset(const ReplayMemory * p) {
-      return next_action_offset(p) + (p->cache_flags[6] ? p->action_size * sizeof(action_t) : 0);
+      return next_action_offset(p) + (p->cache_flags[8] ? p->action_size * sizeof(action_t) : 0);
     }
     static size_t next_prob_offset(const ReplayMemory * p) {
-      return next_reward_offset(p) + (p->cache_flags[7] ? p->reward_size * sizeof(reward_t) : 0);
+      return next_reward_offset(p) + (p->cache_flags[9] ? p->reward_size * sizeof(reward_t) : 0);
     }
     static size_t next_value_offset(const ReplayMemory * p) {
-      return next_prob_offset(p)   + (p->cache_flags[8] ? p->prob_size   * sizeof(prob_t)   : 0);
+      return next_prob_offset(p)   + (p->cache_flags[10] ? p->prob_size  * sizeof(prob_t)   : 0);
+    }
+    static size_t next_qvest_offset(const ReplayMemory * p) {
+      return next_value_offset(p)  + (p->cache_flags[11] ? p->value_size * sizeof(value_t)  : 0);
+    }
+    static size_t next_info_offset(const ReplayMemory * p) {
+      return next_qvest_offset(p)  + (p->cache_flags[12] ? p->qvest_size * sizeof(qvest_t)  : 0);
     }
     static size_t entry_weight_offset(const ReplayMemory * p) {
-      return next_value_offset(p)  + (p->cache_flags[9] ? p->value_size  * sizeof(value_t)  : 0);
+      return next_info_offset(p)   + (p->cache_flags[13] ? p->info_size  * sizeof(info_t)   : 0);
     }
     static size_t nbytes(const ReplayMemory * p) {
       return entry_weight_offset(p)+ sizeof(float);
@@ -205,30 +254,50 @@ public:
       size_t sz = p->cache_flags[4] ? p->value_size : 0;
       return ArrayView<value_t>(hd, sz);
     }
+    ArrayView<qvest_t> prev_qvest(const ReplayMemory * p) {
+      char * hd = p->cache_flags[5] ? (char*)this + prev_qvest_offset(p) : nullptr;
+      size_t sz = p->cache_flags[5] ? p->qvest_size : 0;
+      return ArrayView<qvest_t>(hd, sz);
+    }
+    ArrayView<info_t> prev_info(const ReplayMemory * p) {
+      char * hd = p->cache_flags[6] ? (char*)this + prev_info_offset(p) : nullptr;
+      size_t sz = p->cache_flags[6] ? p->info_size : 0;
+      return ArrayView<info_t>(hd, sz);
+    }
     ArrayView<state_t> next_state(const ReplayMemory * p) {
-      char * hd = p->cache_flags[5] ? (char*)this + next_state_offset(p) : nullptr;
-      size_t sz = p->cache_flags[5] ? p->frame_stack * p->state_size : 0;
+      char * hd = p->cache_flags[7] ? (char*)this + next_state_offset(p) : nullptr;
+      size_t sz = p->cache_flags[7] ? p->frame_stack * p->state_size : 0;
       return ArrayView<state_t>(hd, sz);
     }
     ArrayView<action_t> next_action(const ReplayMemory * p) {
-      char * hd = p->cache_flags[6] ? (char*)this + next_action_offset(p) : nullptr;
-      size_t sz = p->cache_flags[6] ? p->action_size : 0;
+      char * hd = p->cache_flags[8] ? (char*)this + next_action_offset(p) : nullptr;
+      size_t sz = p->cache_flags[8] ? p->action_size : 0;
       return ArrayView<action_t>(hd, sz);
     }
     ArrayView<reward_t> next_reward(const ReplayMemory * p) {
-      char * hd = p->cache_flags[7] ? (char*)this + next_reward_offset(p) : nullptr;
-      size_t sz = p->cache_flags[7] ? p->reward_size : 0;
+      char * hd = p->cache_flags[9] ? (char*)this + next_reward_offset(p) : nullptr;
+      size_t sz = p->cache_flags[9] ? p->reward_size : 0;
       return ArrayView<reward_t>(hd, sz);
     }
     ArrayView<prob_t> next_prob(const ReplayMemory * p) {
-      char * hd = p->cache_flags[8] ? (char*)this + next_prob_offset(p) : nullptr;
-      size_t sz = p->cache_flags[8] ? p->prob_size : 0;
+      char * hd = p->cache_flags[10] ? (char*)this + next_prob_offset(p) : nullptr;
+      size_t sz = p->cache_flags[10] ? p->prob_size : 0;
       return ArrayView<prob_t>(hd, sz);
     }
     ArrayView<value_t> next_value(const ReplayMemory * p) {
-      char * hd = p->cache_flags[9] ? (char*)this + next_value_offset(p) : nullptr;
-      size_t sz = p->cache_flags[9] ? p->value_size : 0;
+      char * hd = p->cache_flags[11] ? (char*)this + next_value_offset(p) : nullptr;
+      size_t sz = p->cache_flags[11] ? p->value_size : 0;
       return ArrayView<value_t>(hd, sz);
+    }
+    ArrayView<qvest_t> next_qvest(const ReplayMemory * p) {
+      char * hd = p->cache_flags[12] ? (char*)this + next_qvest_offset(p) : nullptr;
+      size_t sz = p->cache_flags[12] ? p->qvest_size : 0;
+      return ArrayView<qvest_t>(hd, sz);
+    }
+    ArrayView<info_t> next_info(const ReplayMemory * p) {
+      char * hd = p->cache_flags[13] ? (char*)this + next_info_offset(p) : nullptr;
+      size_t sz = p->cache_flags[13] ? p->info_size : 0;
+      return ArrayView<info_t>(hd, sz);
     }
     ArrayView<float> entry_weight(const ReplayMemory * p) {
       char * hd = (char*)this + entry_weight_offset(p);
@@ -247,21 +316,31 @@ public:
       if(p->cache_flags[4])
         fprintf(f, "%lf ", prev_value(p)[0]);
       if(p->cache_flags[5])
-        fprintf(f, "%u ",  next_state(p)[0]);
+        fprintf(f, "%lf ", prev_qvest(p)[0]);
       if(p->cache_flags[6])
-        fprintf(f, "%lf ", next_action(p)[0]);
+        fprintf(f, "%u ",  prev_info(p)[0]);
       if(p->cache_flags[7])
-        fprintf(f, "%lf ", next_reward(p)[0]);
+        fprintf(f, "%u ",  next_state(p)[0]);
       if(p->cache_flags[8])
-        fprintf(f, "%lf ", next_prob(p)[0]);
+        fprintf(f, "%lf ", next_action(p)[0]);
       if(p->cache_flags[9])
+        fprintf(f, "%lf ", next_reward(p)[0]);
+      if(p->cache_flags[10])
+        fprintf(f, "%lf ", next_prob(p)[0]);
+      if(p->cache_flags[11])
         fprintf(f, "%lf ", next_value(p)[0]);
+      if(p->cache_flags[12])
+        fprintf(f, "%lf ", next_qvest(p)[0]);
+      if(p->cache_flags[13])
+        fprintf(f, "%u ",  next_info(p)[0]);
       fprintf(f, "%lf\n",entry_weight(p)[0]);
     }
 
     void to_memory(const ReplayMemory * p, int idx,
-        state_t * prev_s, action_t * prev_a, reward_t * prev_r, prob_t * prev_p, value_t * prev_v,
-        state_t * next_s, action_t * next_a, reward_t * next_r, prob_t * next_p, value_t * next_v,
+        state_t * prev_s, action_t * prev_a, reward_t * prev_r, prob_t * prev_p,
+        value_t * prev_v, qvest_t * prev_q, info_t * prev_i,
+        state_t * next_s, action_t * next_a, reward_t * next_r, prob_t * next_p,
+        value_t * next_v, qvest_t * next_q, info_t * next_i,
         float * entry_w) {
       if(prev_s and p->cache_flags[0]) {
         auto av = prev_state(p);
@@ -283,25 +362,41 @@ public:
         auto av = prev_value(p);
         av.to_memory(prev_v + idx * av.size());
       }
-      if(next_s and p->cache_flags[5]) {
+      if(prev_q and p->cache_flags[5]) {
+        auto av = prev_qvest(p);
+        av.to_memory(prev_q + idx * av.size());
+      }
+      if(prev_i and p->cache_flags[6]) {
+        auto av = prev_info(p);
+        av.to_memory(prev_i + idx * av.size());
+      }
+      if(next_s and p->cache_flags[7]) {
         auto av = next_state(p);
         av.to_memory(next_s + idx * av.size());
       }
-      if(next_a and p->cache_flags[6]) {
+      if(next_a and p->cache_flags[8]) {
         auto av = next_action(p);
         av.to_memory(next_a + idx * av.size());
       }
-      if(next_r and p->cache_flags[7]) {
+      if(next_r and p->cache_flags[9]) {
         auto av = next_reward(p);
         av.to_memory(next_r + idx * av.size());
       }
-      if(next_p and p->cache_flags[8]) {
+      if(next_p and p->cache_flags[10]) {
         auto av = next_prob(p);
         av.to_memory(next_p + idx * av.size());
       }
-      if(next_v and p->cache_flags[9]) {
+      if(next_v and p->cache_flags[11]) {
         auto av = next_value(p);
         av.to_memory(next_v + idx * av.size());
+      }
+      if(next_q and p->cache_flags[12]) {
+        auto av = next_qvest(p);
+        av.to_memory(next_q + idx * av.size());
+      }
+      if(next_i and p->cache_flags[13]) {
+        auto av = next_info(p);
+        av.to_memory(next_i + idx * av.size());
       }
       if(entry_w) {
         auto av = entry_weight(p);
@@ -338,7 +433,9 @@ public:
   const size_t action_size;          ///< num of action
   const size_t reward_size;          ///< num of reward
   const size_t prob_size;            ///< num of base probability
-  const size_t value_size;           ///< num of discounted future reward sum
+  const size_t value_size;           ///< num of value (filled when predicting)
+  const size_t qvest_size;           ///< num of q-value estimation
+  const size_t info_size;            ///< num of other info
 
   const size_t entry_size;           ///< size of each entry (in bytes)
   const size_t max_step;             ///< max number of steps can be stored
@@ -352,7 +449,7 @@ public:
   int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
   float discount_factor[MAX_RWD_DIM];///< discount factor for calculate R with rewards
   float reward_coeff[MAX_RWD_DIM];   ///< reward coefficient
-  uint8_t cache_flags[10];           ///< Whether we should collect prev s,a,r,p,v and next s,a,r,p,v in caches
+  uint8_t cache_flags[14];           ///< Whether we should collect prev s,a,r,p,v,q,i and next s,a,r,p,v,q,i in caches
 
   uint32_t uuid;                     ///< uuid for current instance
 
@@ -378,6 +475,8 @@ public:
       size_t r_size,
       size_t p_size,
       size_t v_size,
+      size_t q_size,
+      size_t i_size,
       size_t m_step,
       qlib::RNG * prt_rng) :
     state_size{s_size},
@@ -385,6 +484,8 @@ public:
     reward_size{r_size},
     prob_size{p_size},
     value_size{v_size},
+    qvest_size{q_size},
+    info_size{i_size},
     entry_size{T::nbytes(this)},
     max_step{m_step},
     max_episode{0},
@@ -397,6 +498,10 @@ public:
   {
     data.reserve(max_step);
     uuid = qlib::get_nsec();
+    if(value_size and value_size != reward_size)
+      qlog_warning("value_size (%lu) should match reward_size (%lu) or be zero.", value_size, reward_size);
+    if(qvest_size and qvest_size != reward_size)
+      qlog_warning("qvest_size (%lu) should match reward_size (%lu) or be zero.", qvest_size, reward_size);
     for(auto&& each : reward_coeff)
       each = 1.0f;
     for(auto&& each : cache_flags)
@@ -411,6 +516,8 @@ public:
     fprintf(f, "reward_size:   %lu\n", reward_size);
     fprintf(f, "prob_size:     %lu\n", prob_size);
     fprintf(f, "value_size:    %lu\n", value_size);
+    fprintf(f, "qvest_size:    %lu\n", qvest_size);
+    fprintf(f, "info_size:     %lu\n", info_size);
     fprintf(f, "max_step:      %lu\n", max_step);
     fprintf(f, "max_episode:   %lu\n", max_episode);
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
@@ -428,17 +535,21 @@ public:
     for(int i=0; i<std::min<int>(reward_size, MAX_RWD_DIM); i++)
       fprintf(f, "%lf,", reward_coeff[i]);
     fprintf(f, "]\n");
-    fprintf(f, "cache sizes: %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu, %lu: %ld\n",
+    fprintf(f, "cache sizes: %lu %lu %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu %lu %lu, %lu: %ld\n",
         DataSample::prev_action_offset(this) - DataSample::prev_state_offset(this),
         DataSample::prev_reward_offset(this) - DataSample::prev_action_offset(this),
         DataSample::prev_prob_offset(this) - DataSample::prev_reward_offset(this),
         DataSample::prev_value_offset(this) - DataSample::prev_prob_offset(this),
-        DataSample::next_state_offset(this) - DataSample::prev_value_offset(this),
+        DataSample::prev_qvest_offset(this) - DataSample::prev_value_offset(this),
+        DataSample::prev_info_offset(this) - DataSample::prev_qvest_offset(this),
+        DataSample::next_state_offset(this) - DataSample::prev_info_offset(this),
         DataSample::next_action_offset(this) - DataSample::next_state_offset(this),
         DataSample::next_reward_offset(this) - DataSample::next_action_offset(this),
         DataSample::next_prob_offset(this) - DataSample::next_reward_offset(this),
         DataSample::next_value_offset(this) - DataSample::next_prob_offset(this),
-        DataSample::entry_weight_offset(this) - DataSample::next_value_offset(this),
+        DataSample::next_qvest_offset(this) - DataSample::next_value_offset(this),
+        DataSample::next_info_offset(this) - DataSample::next_qvest_offset(this),
+        DataSample::entry_weight_offset(this) - DataSample::next_info_offset(this),
         DataSample::nbytes(this) - DataSample::entry_weight_offset(this),
         DataSample::nbytes(this));
   }
@@ -490,31 +601,40 @@ protected:
    * Update value in an episode
    */
   void update_value(const Episode& epi) {
-    if(value_size==0)
+    if(reward_size==0 or value_size==0 or qvest_size==0) {
+      qlog_warning("update_value() failed: Wrong sizes of (r,v,q): (%lu, %lu, %lu)\n",
+          reward_size, value_size, qvest_size);
       return;
-    // TODO: different discount_factor for different dimension of reward.
+    }
     const auto& gamma = discount_factor;
-    for(int i=epi.length-2; i>=0; i--) { // skip the terminal state
+    // Fill qvest
+    for(int i=epi.length-1; i>=0; i--) {
       long post = (epi.offset + i + 1) % max_step;
       long prev = (epi.offset + i) % max_step;
-      auto post_reward = data[post].reward(this);
       auto post_value  = data[post].value(this);
       auto prev_reward = data[prev].reward(this);
-      //auto prev_value  = data[prev].value(this);
+      auto prev_qvest  = data[prev].qvest(this);
+      auto post_qvest  = data[post].qvest(this);
       for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
         // TD-Lambda
-        prev_reward[j] += mix_lambda * gamma[j] * post_reward[j] + (1-mix_lambda) * gamma[j] * post_value[j];
-        // GAE
-        //prev_reward[j] += gamma * post_value[j] - prev_value[j] + gamma * gae_lambda * post_reward[j];
+        if(i == epi.length-1) // last
+          prev_qvest[j] = prev_reward[j];
+        else
+          prev_qvest[j] = prev_reward[j] + mix_lambda * gamma[j] * post_qvest[j] + (1-mix_lambda) * gamma[j] * post_value[j];
       }
     }
   }
 
   /**
-   * Update weight in an episode, but not commit to prt.
+   * Update weight in an episode.
    */
   void update_weight(const Episode& epi) {
-    // TODO: Optimize this
+    // NOTE: update_weight() requires qvest has been updated by update_value()
+    if(reward_size==0 or value_size==0 or qvest_size==0) {
+      qlog_warning("update_value() failed: Wrong sizes of (r,v,q): (%lu, %lu, %lu)\n",
+          reward_size, value_size, qvest_size);
+      return;
+    }
     for(int i=0; i<std::min<int>(frame_stack-1, epi.length); i++) {
       long idx = (epi.offset + i) % max_step;
       prt.set_weight(idx, 0.0);
@@ -528,8 +648,8 @@ protected:
       auto& prev = data[idx];
       // R is computed with TD-lambda, while V is the original value in prediction
       float priority = 0;
-      for(int i=0; i<(int)prev.reward(this).size(); i++)
-        priority += reward_coeff[i] * fabs(prev.reward(this)[i] - prev.value(this)[i]);
+      for(int i=0; i<(int)prev.qvest(this).size(); i++)
+        priority += reward_coeff[i] * fabs(prev.qvest(this)[i] - prev.value(this)[i]);
       priority = pow(priority, priority_exponent);
       prt.set_weight(idx, prt.get_weight(idx) * priority);
     }
@@ -554,6 +674,7 @@ public:
     if(do_update_value)
       update_value(episode.back());
     if(do_update_weight) {
+      qassert(do_update_value);
       std::lock_guard<std::mutex> guard(prt_mutex);
       update_weight(episode.back());
     }
@@ -578,6 +699,7 @@ public:
       const reward_t * p_r,
       const prob_t   * p_p,
       const value_t  * p_v,
+      const info_t   * p_i,
       float weight)
   {
     if(!episode.empty() and new_offset != get_offset_for_new())
@@ -589,7 +711,7 @@ public:
     }
     long idx = (new_offset + new_length) % max_step;
     auto& entry = data[idx];
-    entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v);
+    entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v, nullptr, p_i);
     prt.set_weight_without_update(idx, weight); // will be update by update_weight() later in close_episode()
     new_length += 1;
   }
@@ -612,20 +734,20 @@ public:
       for(int j=frame_stack-1; j>=0; j--) {
         auto& prev_entry = data[(idx - j) % max_step];
         prev_entry.to_memory(this, (frame_stack-1-j),
-            s.prev_state(this).data(), nullptr, nullptr, nullptr, nullptr);
+            s.prev_state(this).data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
         if(j==0)
           prev_entry.to_memory(this, 0,
-              nullptr, s.prev_action(this).data(), s.prev_reward(this).data(),
-              s.prev_prob(this).data(), s.prev_value(this).data());
+              nullptr, s.prev_action(this).data(), s.prev_reward(this).data(), s.prev_prob(this).data(),
+              s.prev_value(this).data(), s.prev_qvest(this).data(), s.prev_info(this).data());
       }
       for(int j=frame_stack-1; j>=0; j--) {
         auto& next_entry = data[(idx - j + multi_step) % max_step];
         next_entry.to_memory(this, (frame_stack-1-j),
-            s.next_state(this).data(), nullptr, nullptr, nullptr, nullptr);
+            s.next_state(this).data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
         if(j==0)
           next_entry.to_memory(this, 0,
-              nullptr, s.next_action(this).data(), s.next_reward(this).data(),
-              s.next_prob(this).data(), s.next_value(this).data());
+              nullptr, s.next_action(this).data(), s.next_reward(this).data(), s.next_prob(this).data(),
+              s.next_value(this).data(), s.next_qvest(this).data(), s.next_info(this).data());
       }
       if(s.entry_weight(this).data())
         s.entry_weight(this)[0] = prt.get_weight(idx);

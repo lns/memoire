@@ -6,7 +6,7 @@ from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
 # Here we config the state_size, action_size, reward_size, prob_size, value_size in the server
-sizes = (1,1,1,0,1)
+sizes = (1,1,1,0,1,1,1)
 server = ReplayMemoryServer(*sizes, max_step=0, n_caches=4, pub_endpoint="tcp://*:5560")
 rem = server.rem
 
@@ -18,7 +18,7 @@ rem.cache_size = 4
 rem.discount_factor = [0.0]
 rem.reward_coeff = [1.0]
 server.print_info()
-rem.cache_flags = [1,1,1,0,1, 1,1,1,0,1]
+rem.cache_flags = [1,1,1,0,1,1,1, 1,1,1,0,1,1,1]
 batch_size = 4
 
 threads = []

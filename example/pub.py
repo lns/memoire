@@ -5,7 +5,7 @@ import os, time
 from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
-sizes = (1,1,1,0,1)
+sizes = (1,1,1,0,1,1,1)
 server = ReplayMemoryServer(*sizes, max_step=0, n_caches=0, pub_endpoint="tcp://*:5560")
 
 try:

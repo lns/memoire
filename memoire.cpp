@@ -35,6 +35,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("reward_size", &RM::reward_size)
     .def_readonly("prob_size", &RM::prob_size)
     .def_readonly("value_size", &RM::value_size)
+    .def_readonly("qvest_size", &RM::qvest_size)
+    .def_readonly("info_size", &RM::info_size)
     .def_readonly("entry_size", &RM::entry_size)
     .def_readonly("max_step", &RM::max_step)
     .def_readonly("uuid", &RM::uuid)
@@ -70,22 +72,24 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_property("cache_flags",
       [](RM& rm) {
         py::list l;
-        for(int i=0; i<10; i++)
+        for(int i=0; i<14; i++)
           l.append(rm.cache_flags[i]);
         return l;
       },
       [](RM& rm, py::list l) {
-        for(int i=0; i<10 and i<(int)l.size(); i++)
+        for(int i=0; i<14 and i<(int)l.size(); i++)
           rm.cache_flags[i] = py::cast<uint8_t>(l[i]);
       })
-    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t capa) {
-            return std::unique_ptr<RM>(new RM(ss,as,rs,ps,vs,capa,&lcg64));
+    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t qs, size_t is, size_t capa) {
+            return std::unique_ptr<RM>(new RM(ss,as,rs,ps,vs,qs,is,capa,&lcg64));
           }),
         "state_size"_a,
         "action_size"_a,
         "reward_size"_a,
         "prob_size"_a,
         "value_size"_a,
+        "qvest_size"_a,
+        "info_size"_a,
         "max_step"_a)
     .def("print_info", [](RM& rem) { rem.print_info(); })
     .def("num_episode", &RM::num_episode)
@@ -97,14 +101,16 @@ PYBIND11_MODULE(memoire /* module name */, m) {
           pyarr_float r,
           pyarr_float p,
           pyarr_float v,
+          pyarr_char i,
           float weight) {
         qassert(s.size() == (long)rem.state_size);
         qassert(a.size() == (long)rem.action_size);
         qassert(r.size() == (long)rem.reward_size);
         qassert(p.size() == (long)rem.prob_size);
         qassert(v.size() == (long)rem.value_size);
-        rem.add_entry(s.data(), a.data(), r.data(), p.data(), v.data(), weight);
-        }, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "weight"_a);
+        qassert(i.size() == (long)rem.info_size);
+        rem.add_entry(s.data(), a.data(), r.data(), p.data(), v.data(), i.data(), weight);
+        }, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "info"_a, "weight"_a);
 
   py::enum_<typename RM::Mode>(m, "Mode", py::arithmetic())
     .value("Conn", RM::Conn)
@@ -129,15 +135,17 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("total_caches", &RMS::total_caches)
     .def_readonly("total_episodes", &RMS::total_episodes)
     .def_readonly("total_steps", &RMS::total_steps)
-    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t capa,
-            const char * pub_ep, int n_caches) {
-          return std::unique_ptr<RMS>(new RMS(ss,as,rs,ps,vs,capa,&lcg64,pub_ep,n_caches));
+    .def(py::init([](size_t ss, size_t as, size_t rs, size_t ps, size_t vs, size_t qs, size_t is,
+            size_t capa, const char * pub_ep, int n_caches) {
+          return std::unique_ptr<RMS>(new RMS(ss,as,rs,ps,vs,qs,is,capa,&lcg64,pub_ep,n_caches));
         }),
         "state_size"_a,
         "action_size"_a,
         "reward_size"_a,
         "prob_size"_a,
         "value_size"_a,
+        "qvest_size"_a,
+        "info_size"_a,
         "max_step"_a,
         "pub_endpoint"_a,
         "n_caches"_a)
@@ -162,16 +170,20 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("get_batch", [](RMS& s,
           size_t batch_size) {
         size_t stack_size = s.rem.frame_stack;
-        pyarr_char prev_s({batch_size, stack_size, s.rem.state_size});
+        pyarr_char  prev_s({batch_size, stack_size, s.rem.state_size});
         pyarr_float prev_a({batch_size, s.rem.action_size});
         pyarr_float prev_r({batch_size, s.rem.reward_size});
         pyarr_float prev_p({batch_size, s.rem.prob_size});
         pyarr_float prev_v({batch_size, s.rem.value_size});
-        pyarr_char next_s({batch_size, stack_size, s.rem.state_size});
+        pyarr_float prev_q({batch_size, s.rem.qvest_size});
+        pyarr_char  prev_i({batch_size, s.rem.info_size});
+        pyarr_char  next_s({batch_size, stack_size, s.rem.state_size});
         pyarr_float next_a({batch_size, s.rem.action_size});
         pyarr_float next_r({batch_size, s.rem.reward_size});
         pyarr_float next_p({batch_size, s.rem.prob_size});
         pyarr_float next_v({batch_size, s.rem.value_size});
+        pyarr_float next_q({batch_size, s.rem.qvest_size});
+        pyarr_char  next_i({batch_size, s.rem.info_size});
         pyarr_float entry_weight_arr({batch_size,});
         bool ret = s.get_batch(batch_size,
           prev_s.mutable_data(),
@@ -179,16 +191,20 @@ PYBIND11_MODULE(memoire /* module name */, m) {
           prev_r.mutable_data(),
           prev_p.mutable_data(),
           prev_v.mutable_data(),
+          prev_q.mutable_data(),
+          prev_i.mutable_data(),
           next_s.mutable_data(),
           next_a.mutable_data(),
           next_r.mutable_data(),
           next_p.mutable_data(),
           next_v.mutable_data(),
+          next_q.mutable_data(),
+          next_i.mutable_data(),
           entry_weight_arr.mutable_data());
         if(not ret)
           throw std::runtime_error("get_batch() failed.");
-        auto prev = std::make_tuple(prev_s, prev_a, prev_r, prev_p, prev_v);
-        auto next = std::make_tuple(next_s, next_a, next_r, next_p, next_v);
+        auto prev = std::make_tuple(prev_s, prev_a, prev_r, prev_p, prev_v, prev_q, prev_i);
+        auto next = std::make_tuple(next_s, next_a, next_r, next_p, next_v, next_q, next_i);
         auto info = std::make_tuple(entry_weight_arr);
         return std::make_tuple(prev,next,info);
       },"batch_size"_a);

@@ -57,7 +57,7 @@ public:
     pushbuf.resize(RM::pushbuf_size());
     push = reinterpret_cast<Message*>(pushbuf.data());
     // Empty RM
-    prm = new RM{0,0,0,0,0,0,&lcg64};
+    prm = new RM{0,0,0,0,0,0,0,0,&lcg64};
   }
 
   ~ReplayMemoryClient() {
@@ -89,7 +89,7 @@ public:
     qassert(rep->type == req->type);
     // Get sizes
     RM * p = reinterpret_cast<RM*>(&rep->payload);
-    prm = new RM{p->state_size, p->action_size, p->reward_size, p->prob_size, p->value_size,
+    prm = new RM{p->state_size, p->action_size, p->reward_size, p->prob_size, p->value_size, p->qvest_size, p->info_size,
       max_step, &lcg64};
     // Sync parameters
     prm->priority_exponent = p->priority_exponent;

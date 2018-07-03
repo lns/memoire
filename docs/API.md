@@ -18,7 +18,9 @@ class ReplayMemory:
   reward_size   # size of reward (dtype = np.float32)
   prob_size     # size of prob   (dtype = np.float32)
   value_size    # size of value  (dtype = np.float32)
-  entry_size    # byte size of (s,a,r,p,v)
+  qvest_size    # size of qvalue (dtype = np.float32)
+  info_size     # size of info   (dtype = np.uint8)
+  entry_size    # byte size of (s,a,r,p,v,q,i)
   max_step      # max number of sample can be stored in this ReplayMemory
   uuid          # universally unique identifier for this instance
 
@@ -38,7 +40,7 @@ The `ReplayMemory` supports the following methods as
 ```python
 class ReplayMemory:
 
-  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, max_step):
+  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, qvest_size, info_size, max_step):
     """ Constructe a ReplayMemory with these properties """
     pass
 
@@ -75,10 +77,10 @@ class ReplayMemory:
     The number of `num_episode()` will increase by 1 after calling this method. """
     pass
 
-  def add_entry(self, s, a, r, p, v, init_w):
+  def add_entry(self, s, a, r, p, v, i, init_w):
     """ Add an entry to currently opened episode
 
-    This API will add an entry (s,a,r,p,v) to current opened episode.
+    This API will add an entry (s,a,r,p,v,i) to current opened episode.
     The behaviour of adding entries to a closed episode is undefined and should be avoided.
     The number of `num_episode()` may decrease by 1 if space is insufficient.
 
@@ -87,6 +89,7 @@ class ReplayMemory:
     :param  r: reward  (np.array of np.float32)
     :param  p: prob    (np.array of np.float32)
     :param  v: value   (np.array of np.float32)
+    :param  i: info    (np.array of np.uint8)
     :param  init_w: initial sample weight (normally 1.0) """
     pass
     
@@ -105,7 +108,8 @@ class ReplayMemoryServer
   total_caches
   total_steps
 
-  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, max_step, pub_endpoint, n_caches):
+  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, qvest_size, info_size, \
+              max_step, pub_endpoint, n_caches):
     """ Initialize a ReplayMemoryServer
 
     :param  pub_endpoint:   endpoint for PUB/SUB protocal
@@ -149,7 +153,7 @@ class ReplayMemoryServer
     """ Get a batch from the distributed replay memory
 
     This call can be used to prepare a batch of samples for the neural network learner.
-    We define a transition as the pair of a previous states (s,a,r,p,v) and the next state (s,a,r,p,v).
+    We define a transition as the pair of a previous states (s,a,r,p,v,q,i) and the next state (s,a,r,p,v,q,i).
     The `get_batch()` call will return a batch of transitions, as well as their prioritized weight of sampling.
     Please see our vignette for the details of prioritized sampling. 
 

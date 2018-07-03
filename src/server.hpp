@@ -28,9 +28,9 @@ public:
   size_t total_steps;                ///< counter of total steps
   std::mutex counter_mutex;
 
-  ReplayMemoryServer(size_t s_size, size_t a_size, size_t r_size, size_t p_size, size_t v_size,
+  ReplayMemoryServer(size_t s_size, size_t a_size, size_t r_size, size_t p_size, size_t v_size, size_t q_size, size_t i_size,
       size_t max_step, qlib::RNG * prt_rng, const char* pub_endpoint, int n_caches)
-    : rem{s_size, a_size, r_size, p_size, v_size, max_step, prt_rng}, ctx{nullptr},
+    : rem{s_size, a_size, r_size, p_size, v_size, q_size, i_size, max_step, prt_rng}, ctx{nullptr},
     caches{0}, cache_prt{prt_rng, n_caches},
     total_caches{0}, total_episodes{0}, total_steps{0}
   {
@@ -92,11 +92,15 @@ public:
       typename RM::reward_t * prev_r,
       typename RM::prob_t   * prev_p,
       typename RM::value_t  * prev_v,
+      typename RM::qvest_t  * prev_q,
+      typename RM::info_t   * prev_i,
       typename RM::state_t  * next_s,
       typename RM::action_t * next_a,
       typename RM::reward_t * next_r,
       typename RM::prob_t   * next_p,
       typename RM::value_t  * next_v,
+      typename RM::qvest_t  * next_q,
+      typename RM::info_t   * next_i,
       float * entry_weight_arr)
   {
     if(total_caches < caches.size()) {
@@ -130,8 +134,8 @@ public:
       // add caches[c_idx][s_idx] to batch
       auto& s = caches[c_idx].get(s_idx, &rem);
       s.to_memory(&rem, i,
-          prev_s, prev_a, prev_r, prev_p, prev_v,
-          next_s, next_a, next_r, next_p, next_v,
+          prev_s, prev_a, prev_r, prev_p, prev_v, prev_q, prev_i,
+          next_s, next_a, next_r, next_p, next_v, next_q, next_i,
           entry_weight_arr);
     }
     return true;

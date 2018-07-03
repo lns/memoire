@@ -16,6 +16,7 @@ a = np.ndarray((rem.action_size), dtype=np.float32)
 r = np.ndarray((rem.reward_size), dtype=np.float32)
 p = np.ndarray((rem.prob_size), dtype=np.float32)
 v = np.ndarray((rem.value_size), dtype=np.float32)
+i = np.ndarray((rem.info_size), dtype=np.uint8)
 
 time.sleep(1)
 try:
@@ -26,7 +27,8 @@ try:
       a[0] = step
       r[0] = 1
       v[0] = -1
-      rem.add_entry(s, a, r, p, v, weight=1.0)
+      i[0] = step
+      rem.add_entry(s, a, r, p, v, i, weight=1.0)
     rem.close_episode()
     client.update_counter()
     assert 0 == client.push_cache()
