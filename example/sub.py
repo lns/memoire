@@ -6,7 +6,6 @@ import time
 from memoire import ReplayMemory, ReplayMemoryServer, ReplayMemoryClient, Bind, Conn
 
 client = ReplayMemoryClient("tcp://localhost:5560", "", "")
-client.rem.print_info()
 
 try:
   print(client.sub_bytes("M01"))

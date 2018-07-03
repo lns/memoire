@@ -152,8 +152,13 @@ class ReplayMemoryServer
     We define a transition as the pair of a previous states (s,a,r,p,v) and the next state (s,a,r,p,v).
     The `get_batch()` call will return a batch of transitions, as well as their prioritized weight of sampling.
     Please see our vignette for the details of prioritized sampling. 
+
+    This function returns on successfully constructing a batch, or raises exception on failure.
     
     :param  batch_size: Batch size
+
+    :raise  RuntimeError: A RuntimeError will be raised if get_batch() failed. This is usually caused by insufficient
+                          caches at the ReplayMemoryServer side. See the error info printed for detail reasons.
     
     :rtype: tuple(prev, next, weight) """
     pass
@@ -183,15 +188,24 @@ class ReplayMemoryClient
     This function will send a request to the server to query about *_sizes, and reconstruct the local ReplayMemory
     with the new parameters.
 
+    The function returns on response received.
+
     :param  max_step: local ReplayMemory's max_step """
     pass
 
   def update_counter(self):
-    """ Update local counter to the server. Should be called after each finished episode. """
+    """ Update local counter to the server. Should be called after each finished episode.
+
+    The function returns on response received.
+    """
     pass
 
   def push_cache(self):
-    """ Construct and push a cache to the server. Should be called periodically. """
+    """ Construct and push a cache to the server. Should be called periodically.
+
+    The function returns 0 on cache sent successfully, or -1 on failure.
+
+    :rtype: int """
     pass
 
   def sub_bytes(self, topic):

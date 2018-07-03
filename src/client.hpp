@@ -148,12 +148,16 @@ public:
     ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
   }
 
-  void push_cache() {
+  /**
+   * Try to push a cache from local to remote
+   * return 0 iff success
+   */
+  int push_cache() {
     if(not ppsoc)
       qlog_error("PUSH/PULL socket is not connected.\n");
     bool ret = prm->get_cache(cache_buf, push->sum_weight);
     if(not ret) // failed
-      return;
+      return -1;
     //cache_buf->get(prm->cache_size-1, prm).print_first(prm); // DEBUG
     push->type = Message::ProtocalCache;
     push->length = Cache::nbytes(prm);
@@ -161,6 +165,7 @@ public:
     //qlog_info("%s(): cache_size: %d, cache::nbytes: %lu\n", __func__, prm->cache_size, Cache::nbytes(prm));
     ZMQ_CALL(zmq_send(ppsoc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
     ZMQ_CALL(zmq_send(ppsoc, cache_buf, push->length, 0));
+    return 0;
   }
 
 };

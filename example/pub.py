@@ -7,7 +7,6 @@ from threading import Thread
 
 sizes = (1,1,1,0,1)
 server = ReplayMemoryServer(*sizes, max_step=0, n_caches=0, pub_endpoint="tcp://*:5560")
-server.rem.print_info()
 
 try:
   time.sleep(1)

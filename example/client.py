@@ -29,7 +29,7 @@ try:
       rem.add_entry(s, a, r, p, v, weight=1.0)
     rem.close_episode()
     client.update_counter()
-    client.push_cache()
+    assert 0 == client.push_cache()
 except KeyboardInterrupt:
   pass
 os.kill(os.getpid(), 9)
