@@ -525,6 +525,7 @@ public:
     fprintf(f, "frame_stack:   %d\n",  frame_stack);
     fprintf(f, "multi_step:    %d\n",  multi_step);
     fprintf(f, "cache_size:    %u\n",  cache_size);
+    fprintf(f, "reuse_cache:   %d\n",  reuse_cache);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
     fprintf(f, "discount_f:    [");
@@ -535,7 +536,11 @@ public:
     for(int i=0; i<std::min<int>(reward_size, MAX_RWD_DIM); i++)
       fprintf(f, "%lf,", reward_coeff[i]);
     fprintf(f, "]\n");
-    fprintf(f, "cache sizes: %lu %lu %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu %lu %lu, %lu: %ld\n",
+    fprintf(f, "cache_flags:   [");
+    for(const auto& each : cache_flags)
+      fprintf(f, "%d,", each);
+    fprintf(f, "]\n");
+    fprintf(f, "cache sizes:   %lu %lu %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu %lu %lu, %lu: %ld\n",
         DataSample::prev_action_offset(this) - DataSample::prev_state_offset(this),
         DataSample::prev_reward_offset(this) - DataSample::prev_action_offset(this),
         DataSample::prev_prob_offset(this) - DataSample::prev_reward_offset(this),
