@@ -49,7 +49,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("__str__", &BV::str)
     .def("as_array", [](BV& self){
         return py::array(py::dtype(self.format_), self.shape_, self.stride_, self.ptr_);
-      });
+      })
+    ;
 
   py::class_<RM>(m, "ReplayMemory")
     .def_property_readonly("state_buf",  &RM::state_buf)
@@ -145,34 +146,28 @@ PYBIND11_MODULE(memoire /* module name */, m) {
           entry.emplace_back(py::dtype(v.format_), v.shape_, v.stride_, nullptr);
         }
         return entry;
-      });
+      })
+    ;
 
   py::enum_<typename RM::Mode>(m, "Mode", py::arithmetic())
     .value("Conn", RM::Conn)
     .value("Bind", RM::Bind)
-    .export_values();
+    .export_values()
+    ;
 
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const char*, const char*, const char*>(),
         "sub_endpoint"_a, "req_endpoint"_a, "push_endpoint"_a)
     .def_readonly("rem", &RMC::prm)
-    .def("sync_sizes", [](RMC& rmc, size_t m_step) {
-        py::gil_scoped_release release;
-        return rmc.sync_sizes(m_step);
-      }, "max_step"_a)
-    .def("update_counter", [](RMC& rmc) {
-        py::gil_scoped_release release;
-        return rmc.update_counter();
-      })
-    .def("push_cache", [](RMC& rmc) {
-        py::gil_scoped_release release;
-        return rmc.push_cache();
-      })
+    .def("sync_sizes",     &RMC::sync_sizes,     py::call_guard<py::gil_scoped_release>())
+    .def("update_counter", &RMC::update_counter, py::call_guard<py::gil_scoped_release>())
+    .def("push_cache",     &RMC::push_cache,     py::call_guard<py::gil_scoped_release>())
     .def("sub_bytes", [](RMC& rmc, std::string topic) {
         py::gil_scoped_release release;
         std::string ret = rmc.sub_bytes(topic);
         return py::bytes(ret);
-      }, "topic"_a);
+      }, "topic"_a)
+    ;
 
   py::class_<RMS>(m, "ReplayMemoryServer")
     .def_readonly("rem", &RMS::rem) // Actually, the content of rem is readwrite
@@ -203,25 +198,14 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         "pub_endpoint"_a,
         "n_caches"_a)
     .def("print_info", [](RMS& rms) { rms.print_info(); })
-    .def("rep_worker_main", [](RMS& s, const char * ep, typename RM::Mode m) {
-        py::gil_scoped_release release;
-        s.rep_worker_main(ep,m);
-        }, "endpoint"_a, "mode"_a)
-    .def("pull_worker_main", [](RMS& s, const char * ep, typename RM::Mode m) {
-        py::gil_scoped_release release;
-        s.pull_worker_main(ep,m);
-        }, "endpoint"_a, "mode"_a)
-    .def("rep_proxy_main", [](RMS& s, const char * f, const char * b) {
-        py::gil_scoped_release release;
-        s.rep_proxy_main(f,b);
-        }, "front_ep"_a, "back_ep"_a)
-    .def("pull_proxy_main", [](RMS& s, const char * f, const char * b) {
-        py::gil_scoped_release release;
-        s.pull_proxy_main(f,b);
-        }, "front_ep"_a, "back_ep"_a)
-    .def("pub_bytes", &RMS::pub_bytes)
+    .def("rep_worker_main",  &RMS::rep_worker_main,  py::call_guard<py::gil_scoped_release>())
+    .def("pull_worker_main", &RMS::pull_worker_main, py::call_guard<py::gil_scoped_release>())
+    .def("rep_proxy_main",   &RMS::rep_proxy_main,   py::call_guard<py::gil_scoped_release>())
+    .def("pull_proxy_main",  &RMS::pull_proxy_main,  py::call_guard<py::gil_scoped_release>())
+    .def("pub_bytes",        &RMS::pub_bytes,        py::call_guard<py::gil_scoped_release>())
     .def("get_batch", [](RMS& s,
           size_t batch_size) {
+        //py::gil_scoped_release release; // Why can't I release the GIL here?
         std::vector<BV> ret = s.get_batch_view(batch_size);
         std::vector<py::array> prev;
         std::vector<py::array> next;
@@ -249,7 +233,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         if(not succ)
           throw std::runtime_error("get_batch() failed.");
         return std::make_tuple(prev,next,entry_weight_arr);
-      },"batch_size"_a);
+      },"batch_size"_a)
+    ;
 
 }
 
