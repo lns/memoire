@@ -11,8 +11,10 @@
 //#include <signal.h>
 #include "utils.hpp" // non_copyable
 #include "prt_tree.hpp"
+#include "buffer_view.hpp"
 
 #define MAX_RWD_DIM (256)
+#define N_VIEW (7)
 
 /**
  * Distributed Replay Memory
@@ -21,92 +23,42 @@
  * There may be multiple push threads to push batches to remote batch buffer simutanously.
  * However there will be only one thread to modify the local replay memory instance.
  * We hope this design will simplify the concurrent code to avoid conflict.
+ *
+ * We require reward, prob, value, qvest to be float32
  */
-template<typename _state_t, typename _action_t, typename _reward_t>
 class ReplayMemory
 {
 public:
-  //to be visible in derived class
-  typedef _state_t state_t;   
-  typedef _action_t action_t;
-  typedef _reward_t reward_t;
-  typedef float prob_t;        ///< probabilities are saved in float
-  typedef _reward_t value_t;   ///< values should have the same type as reward
-  typedef _reward_t qvest_t;   ///< qvalue estimation
-  typedef uint8_t info_t;
-
   /**
    * Memory structure of an entry. Does not own the memory.
    * (Actually, we should not have member variables, except for static ones)
    */
   class DataEntry : public non_copyable
   {
+    BufView get(int i, const ReplayMemory * p) {
+      assert(0<= i and i < N_VIEW);
+      BufView cur = p->view[i];
+      if(i > 0) {
+        BufView last = get(i-1, p);
+        cur.ptr_ = (char*)last.ptr_ + last.nbytes();
+      } else {
+        cur.ptr_ = this;
+      }
+      return cur;
+    }
   public:
+    BufView state(const ReplayMemory * p)  { return get(0, p); }
+    BufView action(const ReplayMemory * p) { return get(1, p); }
+    BufView reward(const ReplayMemory * p) { return get(2, p); }
+    BufView prob(const ReplayMemory * p)   { return get(3, p); }
+    BufView value(const ReplayMemory * p)  { return get(4, p); }
+    BufView qvest(const ReplayMemory * p)  { return get(5, p); }
+    BufView info(const ReplayMemory * p)   { return get(6, p); }
+
     static size_t nbytes(const ReplayMemory * p) {
-      return p->state_size * sizeof(state_t)
-        + p->action_size * sizeof(action_t)
-        + p->reward_size * sizeof(reward_t)
-        + p->prob_size * sizeof(prob_t)
-        + p->value_size * sizeof(value_t)
-        + p->qvest_size * sizeof(qvest_t)
-        + p->info_size * sizeof(info_t);
-    }
-
-    ArrayView<state_t> state(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = 0;
-      return ArrayView<state_t>(head + offset, p->state_size);
-    }
-
-    ArrayView<action_t> action(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = p->state_size * sizeof(state_t);
-      return ArrayView<action_t>(head + offset, p->action_size);
-    }
-
-    ArrayView<reward_t> reward(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = p->state_size * sizeof(state_t)
-        + p->action_size * sizeof(action_t);
-      return ArrayView<reward_t>(head + offset, p->reward_size);
-    }
-
-    ArrayView<prob_t> prob(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = p->state_size * sizeof(state_t)
-        + p->action_size * sizeof(action_t)
-        + p->reward_size * sizeof(reward_t);
-      return ArrayView<prob_t>(head + offset, p->prob_size);
-    }
-
-    ArrayView<value_t> value(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = p->state_size * sizeof(state_t)
-        + p->action_size * sizeof(action_t)
-        + p->reward_size * sizeof(reward_t)
-        + p->prob_size * sizeof(prob_t);
-      return ArrayView<value_t>(head + offset, p->value_size);
-    }
-
-    ArrayView<qvest_t> qvest(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = p->state_size * sizeof(state_t)
-        + p->action_size * sizeof(action_t)
-        + p->reward_size * sizeof(reward_t)
-        + p->prob_size * sizeof(prob_t)
-        + p->value_size * sizeof(value_t);
-      return ArrayView<qvest_t>(head + offset, p->qvest_size);
-    }
-
-    ArrayView<info_t> info(const ReplayMemory * p) {
-      char * head = reinterpret_cast<char*>(this);
-      size_t offset = p->state_size * sizeof(state_t)
-        + p->action_size * sizeof(action_t)
-        + p->reward_size * sizeof(reward_t)
-        + p->prob_size * sizeof(prob_t)
-        + p->value_size * sizeof(value_t)
-        + p->qvest_size * sizeof(qvest_t);
-      return ArrayView<info_t>(head + offset, p->info_size);
+      DataEntry * dummy = (DataEntry*)nullptr;
+      auto last = dummy->get(N_VIEW-1, p);
+      return ((char*)last.ptr_ - (char*)dummy) + last.nbytes();
     }
 
     /**
@@ -114,28 +66,42 @@ public:
      * @param index  denotes the offset in memory
      */
     void from_memory(const ReplayMemory * p, size_t index,
-        const state_t  * p_s,
-        const action_t * p_a,
-        const reward_t * p_r,
-        const prob_t   * p_p,
-        const value_t  * p_v,
-        const qvest_t  * p_q,
-        const info_t   * p_i)
+        const void * p_s,
+        const void * p_a,
+        const void * p_r,
+        const void * p_p,
+        const void * p_v,
+        const void * p_q,
+        const void * p_i)
     {
-      if(p_s)
-        state(p).from_memory(p_s + index * p->state_size);
-      if(p_a)
-        action(p).from_memory(p_a + index * p->action_size);
-      if(p_r)
-        reward(p).from_memory(p_r + index * p->reward_size);
-      if(p_p)
-        prob(p).from_memory(p_p + index * p->prob_size);
-      if(p_v)
-        value(p).from_memory(p_v + index * p->value_size);
-      if(p_q)
-        qvest(p).from_memory(p_q + index * p->qvest_size);
-      if(p_i)
-        info(p).from_memory(p_i + index * p->info_size);
+      if(p_s) {
+        auto buf = state(p);
+        buf.from_memory((char*)p_s + index * buf.nbytes());
+      }
+      if(p_a) {
+        auto buf = action(p);
+        buf.from_memory((char*)p_a + index * buf.nbytes());
+      }
+      if(p_r) {
+        auto buf = reward(p);
+        buf.from_memory((char*)p_r + index * buf.nbytes());
+      }
+      if(p_p) {
+        auto buf = prob(p);
+        buf.from_memory((char*)p_p + index * buf.nbytes());
+      }
+      if(p_v) {
+        auto buf = value(p);
+        buf.from_memory((char*)p_v + index * buf.nbytes());
+      }
+      if(p_q) {
+        auto buf = qvest(p);
+        buf.from_memory((char*)p_q + index * buf.nbytes());
+      }
+      if(p_i) {
+        auto buf = info(p);
+        buf.from_memory((char*)p_i + index * buf.nbytes());
+      }
     }
 
     /**
@@ -143,34 +109,34 @@ public:
      * @param index  denotes the offset in memory (see ReplayMemory::get_batch())
      */
     void to_memory(const ReplayMemory * p, size_t index,
-        state_t  * p_s,
-        action_t * p_a,
-        reward_t * p_r,
-        prob_t   * p_p,
-        value_t  * p_v,
-        qvest_t  * p_q,
-        info_t   * p_i)
+        void * p_s,
+        void * p_a,
+        void * p_r,
+        void * p_p,
+        void * p_v,
+        void * p_q,
+        void * p_i)
     {
       if(p_s)
-        state(p).to_memory(p_s + index * p->state_size);
+        state(p).to_memory((char*)p_s + index * state(p).nbytes());
       if(p_a)
-        action(p).to_memory(p_a + index * p->action_size);
+        action(p).to_memory((char*)p_a + index * action(p).nbytes());
       if(p_r)
-        reward(p).to_memory(p_r + index * p->reward_size);
+        reward(p).to_memory((char*)p_r + index * reward(p).nbytes());
       if(p_p)
-        prob(p).to_memory(p_p + index * p->prob_size);
+        prob(p).to_memory((char*)p_p + index * prob(p).nbytes());
       if(p_v)
-        value(p).to_memory(p_v + index * p->value_size);
+        value(p).to_memory((char*)p_v + index * value(p).nbytes());
       if(p_q)
-        qvest(p).to_memory(p_q + index * p->qvest_size);
+        qvest(p).to_memory((char*)p_q + index * qvest(p).nbytes());
       if(p_i)
-        info(p).to_memory(p_i + index * p->info_size);
+        info(p).to_memory((char*)p_i + index * info(p).nbytes());
     }
 
   };
 
   /**
-   * Memory structure of a sample. Does not own the memory.
+   * Memory structure of a sample / transition. Does not own the memory.
    * This is used in constructing cache.
    */
   class DataSample : public non_copyable
@@ -179,228 +145,131 @@ public:
     static size_t ceil(size_t a) {
       return (a+N-1) / N * N;
     }
+    BufView get(int i, const ReplayMemory * p, bool nullify_ptr_if_not_cached) {
+      assert(0<= i and i <= 2 * N_VIEW);
+      BufView cur = p->view[i % N_VIEW];
+      if(i % N_VIEW == 0) { // state
+        cur.shape_.insert(cur.shape_.begin(), (ssize_t)p->frame_stack);
+        cur.make_c_stride();
+      }
+      if(i == 2 * N_VIEW) // entry_weight
+        cur = BufView(nullptr, sizeof(float), "f", std::vector<ssize_t>(), std::vector<ssize_t>());
+      if(i > 0) {
+        BufView last = get(i-1, p, false);
+        cur.ptr_ = (char*)last.ptr_ + (p->cache_flags[i-1] ? last.nbytes() : 0);
+      } else {
+        cur.ptr_ = this;
+      }
+      if(nullify_ptr_if_not_cached and i < 2 * N_VIEW and p->cache_flags[i] == 0)
+        cur.ptr_ = nullptr;
+      return cur;
+    }
   public:
-    static size_t prev_state_offset(const ReplayMemory * p) {
-      return 0;
-    }
-    static size_t prev_action_offset(const ReplayMemory * p) {
-      return ceil<4>(prev_state_offset(p) + (p->cache_flags[0] ? p->frame_stack * p->state_size * sizeof(state_t) : 0));
-    }
-    static size_t prev_reward_offset(const ReplayMemory * p) {
-      return prev_action_offset(p) + (p->cache_flags[1] ? p->action_size * sizeof(action_t) : 0);
-    }
-    static size_t prev_prob_offset(const ReplayMemory * p) {
-      return prev_reward_offset(p) + (p->cache_flags[2] ? p->reward_size * sizeof(reward_t) : 0);
-    }
-    static size_t prev_value_offset(const ReplayMemory * p) {
-      return prev_prob_offset(p)   + (p->cache_flags[3] ? p->prob_size   * sizeof(prob_t)   : 0);
-    }
-    static size_t prev_qvest_offset(const ReplayMemory * p) {
-      return prev_value_offset(p)  + (p->cache_flags[4] ? p->value_size  * sizeof(value_t)  : 0);
-    }
-    static size_t prev_info_offset(const ReplayMemory * p) {
-      return prev_qvest_offset(p)  + (p->cache_flags[5] ? p->qvest_size  * sizeof(qvest_t)  : 0);
-    }
-    static size_t next_state_offset(const ReplayMemory * p) {
-      return prev_info_offset(p)   + (p->cache_flags[6] ? p->info_size   * sizeof(info_t)   : 0);
-    }
-    static size_t next_action_offset(const ReplayMemory * p) {
-      return ceil<4>(next_state_offset(p) + (p->cache_flags[7] ? p->frame_stack * p->state_size * sizeof(state_t) : 0));
-    }
-    static size_t next_reward_offset(const ReplayMemory * p) {
-      return next_action_offset(p) + (p->cache_flags[8] ? p->action_size * sizeof(action_t) : 0);
-    }
-    static size_t next_prob_offset(const ReplayMemory * p) {
-      return next_reward_offset(p) + (p->cache_flags[9] ? p->reward_size * sizeof(reward_t) : 0);
-    }
-    static size_t next_value_offset(const ReplayMemory * p) {
-      return next_prob_offset(p)   + (p->cache_flags[10] ? p->prob_size  * sizeof(prob_t)   : 0);
-    }
-    static size_t next_qvest_offset(const ReplayMemory * p) {
-      return next_value_offset(p)  + (p->cache_flags[11] ? p->value_size * sizeof(value_t)  : 0);
-    }
-    static size_t next_info_offset(const ReplayMemory * p) {
-      return next_qvest_offset(p)  + (p->cache_flags[12] ? p->qvest_size * sizeof(qvest_t)  : 0);
-    }
-    static size_t entry_weight_offset(const ReplayMemory * p) {
-      return next_info_offset(p)   + (p->cache_flags[13] ? p->info_size  * sizeof(info_t)   : 0);
-    }
+    BufView prev_state(const ReplayMemory * p)  { return get( 0, p, true); }
+    BufView prev_action(const ReplayMemory * p) { return get( 1, p, true); }
+    BufView prev_reward(const ReplayMemory * p) { return get( 2, p, true); }
+    BufView prev_prob(const ReplayMemory * p)   { return get( 3, p, true); }
+    BufView prev_value(const ReplayMemory * p)  { return get( 4, p, true); }
+    BufView prev_qvest(const ReplayMemory * p)  { return get( 5, p, true); }
+    BufView prev_info(const ReplayMemory * p)   { return get( 6, p, true); }
+    BufView next_state(const ReplayMemory * p)  { return get( 7, p, true); }
+    BufView next_action(const ReplayMemory * p) { return get( 8, p, true); }
+    BufView next_reward(const ReplayMemory * p) { return get( 9, p, true); }
+    BufView next_prob(const ReplayMemory * p)   { return get(10, p, true); }
+    BufView next_value(const ReplayMemory * p)  { return get(11, p, true); }
+    BufView next_qvest(const ReplayMemory * p)  { return get(12, p, true); }
+    BufView next_info(const ReplayMemory * p)   { return get(13, p, true); }
+    BufView entry_weight(const ReplayMemory * p){ return get(14, p, true); }
+
     static size_t nbytes(const ReplayMemory * p) {
-      return entry_weight_offset(p)+ sizeof(float);
+      DataSample * dummy = (DataSample*)nullptr;
+      auto last = dummy->get(2*N_VIEW, p, false);
+      return ((char*)(last.ptr_) - (char*)dummy) + last.nbytes();
     }
 
-    ArrayView<state_t> prev_state(const ReplayMemory * p) {
-      char * hd = p->cache_flags[0] ? (char*)this + prev_state_offset(p) : nullptr;
-      size_t sz = p->cache_flags[0] ? p->frame_stack * p->state_size : 0;
-      return ArrayView<state_t>(hd, sz);
-    }
-    ArrayView<action_t> prev_action(const ReplayMemory * p) {
-      char * hd = p->cache_flags[1] ? (char*)this + prev_action_offset(p) : nullptr;
-      size_t sz = p->cache_flags[1] ? p->action_size : 0;
-      return ArrayView<action_t>(hd, sz);
-    }
-    ArrayView<reward_t> prev_reward(const ReplayMemory * p) {
-      char * hd = p->cache_flags[2] ? (char*)this + prev_reward_offset(p) : nullptr;
-      size_t sz = p->cache_flags[2] ? p->reward_size : 0;
-      return ArrayView<reward_t>(hd, sz);
-    }
-    ArrayView<prob_t> prev_prob(const ReplayMemory * p) {
-      char * hd = p->cache_flags[3] ? (char*)this + prev_prob_offset(p) : nullptr;
-      size_t sz = p->cache_flags[3] ? p->prob_size : 0;
-      return ArrayView<prob_t>(hd, sz);
-    }
-    ArrayView<value_t> prev_value(const ReplayMemory * p) {
-      char * hd = p->cache_flags[4] ? (char*)this + prev_value_offset(p) : nullptr;
-      size_t sz = p->cache_flags[4] ? p->value_size : 0;
-      return ArrayView<value_t>(hd, sz);
-    }
-    ArrayView<qvest_t> prev_qvest(const ReplayMemory * p) {
-      char * hd = p->cache_flags[5] ? (char*)this + prev_qvest_offset(p) : nullptr;
-      size_t sz = p->cache_flags[5] ? p->qvest_size : 0;
-      return ArrayView<qvest_t>(hd, sz);
-    }
-    ArrayView<info_t> prev_info(const ReplayMemory * p) {
-      char * hd = p->cache_flags[6] ? (char*)this + prev_info_offset(p) : nullptr;
-      size_t sz = p->cache_flags[6] ? p->info_size : 0;
-      return ArrayView<info_t>(hd, sz);
-    }
-    ArrayView<state_t> next_state(const ReplayMemory * p) {
-      char * hd = p->cache_flags[7] ? (char*)this + next_state_offset(p) : nullptr;
-      size_t sz = p->cache_flags[7] ? p->frame_stack * p->state_size : 0;
-      return ArrayView<state_t>(hd, sz);
-    }
-    ArrayView<action_t> next_action(const ReplayMemory * p) {
-      char * hd = p->cache_flags[8] ? (char*)this + next_action_offset(p) : nullptr;
-      size_t sz = p->cache_flags[8] ? p->action_size : 0;
-      return ArrayView<action_t>(hd, sz);
-    }
-    ArrayView<reward_t> next_reward(const ReplayMemory * p) {
-      char * hd = p->cache_flags[9] ? (char*)this + next_reward_offset(p) : nullptr;
-      size_t sz = p->cache_flags[9] ? p->reward_size : 0;
-      return ArrayView<reward_t>(hd, sz);
-    }
-    ArrayView<prob_t> next_prob(const ReplayMemory * p) {
-      char * hd = p->cache_flags[10] ? (char*)this + next_prob_offset(p) : nullptr;
-      size_t sz = p->cache_flags[10] ? p->prob_size : 0;
-      return ArrayView<prob_t>(hd, sz);
-    }
-    ArrayView<value_t> next_value(const ReplayMemory * p) {
-      char * hd = p->cache_flags[11] ? (char*)this + next_value_offset(p) : nullptr;
-      size_t sz = p->cache_flags[11] ? p->value_size : 0;
-      return ArrayView<value_t>(hd, sz);
-    }
-    ArrayView<qvest_t> next_qvest(const ReplayMemory * p) {
-      char * hd = p->cache_flags[12] ? (char*)this + next_qvest_offset(p) : nullptr;
-      size_t sz = p->cache_flags[12] ? p->qvest_size : 0;
-      return ArrayView<qvest_t>(hd, sz);
-    }
-    ArrayView<info_t> next_info(const ReplayMemory * p) {
-      char * hd = p->cache_flags[13] ? (char*)this + next_info_offset(p) : nullptr;
-      size_t sz = p->cache_flags[13] ? p->info_size : 0;
-      return ArrayView<info_t>(hd, sz);
-    }
-    ArrayView<float> entry_weight(const ReplayMemory * p) {
-      char * hd = (char*)this + entry_weight_offset(p);
-      return ArrayView<float_t>(hd, 1);
-    }
-
-    void print_first(const ReplayMemory * p, FILE * f = stderr) {
-      if(p->cache_flags[0])
-        fprintf(f, "%u ",  prev_state(p)[0]);
-      if(p->cache_flags[1])
-        fprintf(f, "%lf ", prev_action(p)[0]);
-      if(p->cache_flags[2])
-        fprintf(f, "%lf ", prev_reward(p)[0]);
-      if(p->cache_flags[3])
-        fprintf(f, "%lf ", prev_prob(p)[0]);
-      if(p->cache_flags[4])
-        fprintf(f, "%lf ", prev_value(p)[0]);
-      if(p->cache_flags[5])
-        fprintf(f, "%lf ", prev_qvest(p)[0]);
-      if(p->cache_flags[6])
-        fprintf(f, "%u ",  prev_info(p)[0]);
-      if(p->cache_flags[7])
-        fprintf(f, "%u ",  next_state(p)[0]);
-      if(p->cache_flags[8])
-        fprintf(f, "%lf ", next_action(p)[0]);
-      if(p->cache_flags[9])
-        fprintf(f, "%lf ", next_reward(p)[0]);
-      if(p->cache_flags[10])
-        fprintf(f, "%lf ", next_prob(p)[0]);
-      if(p->cache_flags[11])
-        fprintf(f, "%lf ", next_value(p)[0]);
-      if(p->cache_flags[12])
-        fprintf(f, "%lf ", next_qvest(p)[0]);
-      if(p->cache_flags[13])
-        fprintf(f, "%u ",  next_info(p)[0]);
-      fprintf(f, "%lf\n",entry_weight(p)[0]);
+    void print(const ReplayMemory * p, FILE * f = stderr) {
+      if(p->cache_flags[ 0]) prev_state(p).print(f);
+      if(p->cache_flags[ 1]) prev_action(p).print(f);
+      if(p->cache_flags[ 2]) prev_reward(p).print(f);
+      if(p->cache_flags[ 3]) prev_prob(p).print(f);
+      if(p->cache_flags[ 4]) prev_value(p).print(f);
+      if(p->cache_flags[ 5]) prev_qvest(p).print(f);
+      if(p->cache_flags[ 6]) prev_info(p).print(f);
+      if(p->cache_flags[ 7]) next_state(p).print(f);
+      if(p->cache_flags[ 8]) next_action(p).print(f);
+      if(p->cache_flags[ 9]) next_reward(p).print(f);
+      if(p->cache_flags[10]) next_prob(p).print(f);
+      if(p->cache_flags[11]) next_value(p).print(f);
+      if(p->cache_flags[12]) next_qvest(p).print(f);
+      if(p->cache_flags[13]) next_info(p).print(f);
+      entry_weight(p).print(f);
     }
 
     void to_memory(const ReplayMemory * p, int idx,
-        state_t * prev_s, action_t * prev_a, reward_t * prev_r, prob_t * prev_p,
-        value_t * prev_v, qvest_t * prev_q, info_t * prev_i,
-        state_t * next_s, action_t * next_a, reward_t * next_r, prob_t * next_p,
-        value_t * next_v, qvest_t * next_q, info_t * next_i,
+        void * prev_s, void * prev_a, void * prev_r, void * prev_p,
+        void * prev_v, void * prev_q, void * prev_i,
+        void * next_s, void * next_a, void * next_r, void * next_p,
+        void * next_v, void * next_q, void * next_i,
         float * entry_w) {
       if(prev_s and p->cache_flags[0]) {
-        auto av = prev_state(p);
-        av.to_memory(prev_s + idx * av.size());
+        auto buf = prev_state(p);
+        buf.to_memory((char*)prev_s + idx * buf.nbytes());
       }
       if(prev_a and p->cache_flags[1]) {
-        auto av = prev_action(p);
-        av.to_memory(prev_a + idx * av.size());
+        auto buf = prev_action(p);
+        buf.to_memory((char*)prev_a + idx * buf.nbytes());
       }
       if(prev_r and p->cache_flags[2]) {
-        auto av = prev_reward(p);
-        av.to_memory(prev_r + idx * av.size());
+        auto buf = prev_reward(p);
+        buf.to_memory((char*)prev_r + idx * buf.nbytes());
       }
       if(prev_p and p->cache_flags[3]) {
-        auto av = prev_prob(p);
-        av.to_memory(prev_p + idx * av.size());
+        auto buf = prev_prob(p);
+        buf.to_memory((char*)prev_p + idx * buf.nbytes());
       }
       if(prev_v and p->cache_flags[4]) {
-        auto av = prev_value(p);
-        av.to_memory(prev_v + idx * av.size());
+        auto buf = prev_value(p);
+        buf.to_memory((char*)prev_v + idx * buf.nbytes());
       }
       if(prev_q and p->cache_flags[5]) {
-        auto av = prev_qvest(p);
-        av.to_memory(prev_q + idx * av.size());
+        auto buf = prev_qvest(p);
+        buf.to_memory((char*)prev_q + idx * buf.nbytes());
       }
       if(prev_i and p->cache_flags[6]) {
-        auto av = prev_info(p);
-        av.to_memory(prev_i + idx * av.size());
+        auto buf = prev_info(p);
+        buf.to_memory((char*)prev_i + idx * buf.nbytes());
       }
       if(next_s and p->cache_flags[7]) {
-        auto av = next_state(p);
-        av.to_memory(next_s + idx * av.size());
+        auto buf = next_state(p);
+        buf.to_memory((char*)next_s + idx * buf.nbytes());
       }
       if(next_a and p->cache_flags[8]) {
-        auto av = next_action(p);
-        av.to_memory(next_a + idx * av.size());
+        auto buf = next_action(p);
+        buf.to_memory((char*)next_a + idx * buf.nbytes());
       }
       if(next_r and p->cache_flags[9]) {
-        auto av = next_reward(p);
-        av.to_memory(next_r + idx * av.size());
+        auto buf = next_reward(p);
+        buf.to_memory((char*)next_r + idx * buf.nbytes());
       }
       if(next_p and p->cache_flags[10]) {
-        auto av = next_prob(p);
-        av.to_memory(next_p + idx * av.size());
+        auto buf = next_prob(p);
+        buf.to_memory((char*)next_p + idx * buf.nbytes());
       }
       if(next_v and p->cache_flags[11]) {
-        auto av = next_value(p);
-        av.to_memory(next_v + idx * av.size());
+        auto buf = next_value(p);
+        buf.to_memory((char*)next_v + idx * buf.nbytes());
       }
       if(next_q and p->cache_flags[12]) {
-        auto av = next_qvest(p);
-        av.to_memory(next_q + idx * av.size());
+        auto buf = next_qvest(p);
+        buf.to_memory((char*)next_q + idx * buf.nbytes());
       }
       if(next_i and p->cache_flags[13]) {
-        auto av = next_info(p);
-        av.to_memory(next_i + idx * av.size());
+        auto buf = next_info(p);
+        buf.to_memory((char*)next_i + idx * buf.nbytes());
       }
       if(entry_w) {
-        auto av = entry_weight(p);
-        av.to_memory(entry_w + idx * av.size());
+        auto buf = entry_weight(p);
+        buf.to_memory((char*)entry_w + idx * buf.nbytes());
       }
     }
 
@@ -419,8 +288,6 @@ public:
   };
 
 protected:
-  typedef DataEntry T;
-
   class Episode {
   public:
     const long offset;
@@ -429,13 +296,7 @@ protected:
   };
 
 public:
-  const size_t state_size;           ///< num of state
-  const size_t action_size;          ///< num of action
-  const size_t reward_size;          ///< num of reward
-  const size_t prob_size;            ///< num of base probability
-  const size_t value_size;           ///< num of value (filled when predicting)
-  const size_t qvest_size;           ///< num of q-value estimation
-  const size_t info_size;            ///< num of other info
+  const BufView view[N_VIEW];        ///< buffer view of s, a, r, p, v, q, i
 
   const size_t entry_size;           ///< size of each entry (in bytes)
   const size_t max_step;             ///< max number of steps can be stored
@@ -449,12 +310,12 @@ public:
   int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
   float discount_factor[MAX_RWD_DIM];///< discount factor for calculate R with rewards
   float reward_coeff[MAX_RWD_DIM];   ///< reward coefficient
-  uint8_t cache_flags[14];           ///< Whether we should collect prev s,a,r,p,v,q,i and next s,a,r,p,v,q,i in caches
+  uint8_t cache_flags[2*N_VIEW];     ///< Whether we should collect prev s,a,r,p,v,q,i and next s,a,r,p,v,q,i in caches
 
   uint32_t uuid;                     ///< uuid for current instance
 
 protected:
-  Vector<T> data;                    ///< Actual data of all samples
+  Vector<DataEntry> data;            ///< Actual data of all samples
   std::queue<Episode> episode;       ///< Episodes
   PrtTree prt;                       ///< Priority tree for sampling
   std::mutex prt_mutex;              ///< mutex for priority tree
@@ -470,23 +331,19 @@ public:
    * @param e_size   size of a single entry (in bytes)
    * @param max_epi  max number of episodes kept in the memory
    */
-  ReplayMemory(size_t s_size,
-      size_t a_size,
-      size_t r_size,
-      size_t p_size,
-      size_t v_size,
-      size_t q_size,
-      size_t i_size,
+  ReplayMemory(const BufView * vw,
       size_t m_step,
       qlib::RNG * prt_rng) :
-    state_size{s_size},
-    action_size{a_size},
-    reward_size{r_size},
-    prob_size{p_size},
-    value_size{v_size},
-    qvest_size{q_size},
-    info_size{i_size},
-    entry_size{T::nbytes(this)},
+    view{
+      BufView(nullptr, vw[0].itemsize_, vw[0].format_, vw[0].shape_, vw[0].stride_),
+      BufView(nullptr, vw[1].itemsize_, vw[1].format_, vw[1].shape_, vw[1].stride_),
+      BufView(nullptr, vw[2].itemsize_, vw[2].format_, vw[2].shape_, vw[2].stride_),
+      BufView(nullptr, vw[3].itemsize_, vw[3].format_, vw[3].shape_, vw[3].stride_),
+      BufView(nullptr, vw[4].itemsize_, vw[4].format_, vw[4].shape_, vw[4].stride_),
+      BufView(nullptr, vw[5].itemsize_, vw[5].format_, vw[5].shape_, vw[5].stride_),
+      BufView(nullptr, vw[6].itemsize_, vw[6].format_, vw[6].shape_, vw[6].stride_),
+    },
+    entry_size{DataEntry::nbytes(this)},
     max_step{m_step},
     max_episode{0},
     cache_size{0},
@@ -496,28 +353,62 @@ public:
     prt{prt_rng, static_cast<int>(max_step)},
     rng{prt_rng}
   {
+    check();
     data.reserve(max_step);
     uuid = qlib::get_nsec();
-    if(value_size and value_size != reward_size)
-      qlog_warning("value_size (%lu) should match reward_size (%lu) or be zero.", value_size, reward_size);
-    if(qvest_size and qvest_size != reward_size)
-      qlog_warning("qvest_size (%lu) should match reward_size (%lu) or be zero.", qvest_size, reward_size);
+    for(auto&& each : discount_factor)
+      each = 1.0f;
     for(auto&& each : reward_coeff)
       each = 1.0f;
     for(auto&& each : cache_flags)
       each = 1;
   }
 
+  void check() const {
+    qassert(prob_buf().format_   == "f");
+    qassert(reward_buf().format_ == "f");
+    qassert(value_buf().format_  == "f");
+    qassert(qvest_buf().format_  == "f");
+    if(prob_buf().ndim() > 0)
+      qlog_warning("prob (%s) should be a single number.\n",
+          prob_buf().str().c_str());
+    if(reward_buf().ndim() > 1)
+      qlog_warning("reward (%s) should be a single number or a 1-dim array.\n",
+          reward_buf().str().c_str());
+    if(value_buf().size() and value_buf().shape_ != reward_buf().shape_)
+      qlog_warning("value shape (%s) should match reward shape (%s) or be zero.\n",
+          value_buf().str().c_str(), reward_buf().str().c_str());
+    if(qvest_buf().size() and qvest_buf().shape_ != reward_buf().shape_)
+      qlog_warning("qvest shape (%s) should match reward shape (%s) or be zero.\n",
+          qvest_buf().str().c_str(), reward_buf().str().c_str());
+    qassert(state_buf().is_c_contiguous());
+    qassert(action_buf().is_c_contiguous());
+    qassert(reward_buf().is_c_contiguous());
+    qassert(prob_buf().is_c_contiguous());
+    qassert(value_buf().is_c_contiguous());
+    qassert(qvest_buf().is_c_contiguous());
+    qassert(info_buf().is_c_contiguous());
+    qassert(reward_buf().size() <= MAX_RWD_DIM);
+  }
+
+  const BufView& state_buf()  const { return view[0]; }
+  const BufView& action_buf() const { return view[1]; }
+  const BufView& reward_buf() const { return view[2]; }
+  const BufView& prob_buf()   const { return view[3]; }
+  const BufView& value_buf()  const { return view[4]; }
+  const BufView& qvest_buf()  const { return view[5]; }
+  const BufView& info_buf()   const { return view[6]; }
+
   void print_info(FILE * f = stderr) const
   {
     fprintf(f, "uuid:          0x%08x\n", uuid);
-    fprintf(f, "state_size:    %lu\n", state_size);
-    fprintf(f, "action_size:   %lu\n", action_size);
-    fprintf(f, "reward_size:   %lu\n", reward_size);
-    fprintf(f, "prob_size:     %lu\n", prob_size);
-    fprintf(f, "value_size:    %lu\n", value_size);
-    fprintf(f, "qvest_size:    %lu\n", qvest_size);
-    fprintf(f, "info_size:     %lu\n", info_size);
+    fprintf(f, "state_buf:     %s\n",  state_buf().str().c_str());
+    fprintf(f, "action_buf:    %s\n",  action_buf().str().c_str());
+    fprintf(f, "reward_buf:    %s\n",  reward_buf().str().c_str());
+    fprintf(f, "prob_buf:      %s\n",  prob_buf().str().c_str());
+    fprintf(f, "value_buf:     %s\n",  value_buf().str().c_str());
+    fprintf(f, "qvest_buf:     %s\n",  qvest_buf().str().c_str());
+    fprintf(f, "info_buf:      %s\n",  info_buf().str().c_str());
     fprintf(f, "max_step:      %lu\n", max_step);
     fprintf(f, "max_episode:   %lu\n", max_episode);
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
@@ -529,34 +420,17 @@ public:
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
     fprintf(f, "discount_f:    [");
-    for(int i=0; i<std::min<int>(reward_size, MAX_RWD_DIM); i++)
+    for(int i=0; i<std::min<int>(reward_buf().size(), MAX_RWD_DIM); i++)
       fprintf(f, "%lf,", discount_factor[i]);
     fprintf(f, "]\n");
     fprintf(f, "reward_coeff:  [");
-    for(int i=0; i<std::min<int>(reward_size, MAX_RWD_DIM); i++)
+    for(int i=0; i<std::min<int>(reward_buf().size(), MAX_RWD_DIM); i++)
       fprintf(f, "%lf,", reward_coeff[i]);
     fprintf(f, "]\n");
     fprintf(f, "cache_flags:   [");
     for(const auto& each : cache_flags)
       fprintf(f, "%d,", each);
     fprintf(f, "]\n");
-    fprintf(f, "cache sizes:   %lu %lu %lu %lu %lu %lu %lu, %lu %lu %lu %lu %lu %lu %lu, %lu: %ld\n",
-        DataSample::prev_action_offset(this) - DataSample::prev_state_offset(this),
-        DataSample::prev_reward_offset(this) - DataSample::prev_action_offset(this),
-        DataSample::prev_prob_offset(this) - DataSample::prev_reward_offset(this),
-        DataSample::prev_value_offset(this) - DataSample::prev_prob_offset(this),
-        DataSample::prev_qvest_offset(this) - DataSample::prev_value_offset(this),
-        DataSample::prev_info_offset(this) - DataSample::prev_qvest_offset(this),
-        DataSample::next_state_offset(this) - DataSample::prev_info_offset(this),
-        DataSample::next_action_offset(this) - DataSample::next_state_offset(this),
-        DataSample::next_reward_offset(this) - DataSample::next_action_offset(this),
-        DataSample::next_prob_offset(this) - DataSample::next_reward_offset(this),
-        DataSample::next_value_offset(this) - DataSample::next_prob_offset(this),
-        DataSample::next_qvest_offset(this) - DataSample::next_value_offset(this),
-        DataSample::next_info_offset(this) - DataSample::next_qvest_offset(this),
-        DataSample::entry_weight_offset(this) - DataSample::next_info_offset(this),
-        DataSample::nbytes(this) - DataSample::entry_weight_offset(this),
-        DataSample::nbytes(this));
   }
 
   size_t num_episode() const { return episode.size(); }
@@ -606,20 +480,18 @@ protected:
    * Update value in an episode
    */
   void update_value(const Episode& epi) {
-    if(reward_size==0 or value_size==0 or qvest_size==0) {
-      qlog_warning("update_value() failed: Wrong sizes of (r,v,q): (%lu, %lu, %lu)\n",
-          reward_size, value_size, qvest_size);
-      return;
-    }
+    assert(reward_buf().size() != 0);
+    assert(value_buf().size() != 0);
+    assert(qvest_buf().size() != 0);
     const auto& gamma = discount_factor;
     // Fill qvest
     for(int i=epi.length-1; i>=0; i--) {
       long post = (epi.offset + i + 1) % max_step;
       long prev = (epi.offset + i) % max_step;
-      auto post_value  = data[post].value(this);
-      auto prev_reward = data[prev].reward(this);
-      auto prev_qvest  = data[prev].qvest(this);
-      auto post_qvest  = data[post].qvest(this);
+      auto post_value  = data[post].value(this).as_array<float>();
+      auto prev_reward = data[prev].reward(this).as_array<float>();
+      auto prev_qvest  = data[prev].qvest(this).as_array<float>();
+      auto post_qvest  = data[post].qvest(this).as_array<float>();
       for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
         // TD-Lambda
         if(i == epi.length-1) // last
@@ -634,12 +506,9 @@ protected:
    * Update weight in an episode.
    */
   void update_weight(const Episode& epi) {
-    // NOTE: update_weight() requires qvest has been updated by update_value()
-    if(reward_size==0 or value_size==0 or qvest_size==0) {
-      qlog_warning("update_value() failed: Wrong sizes of (r,v,q): (%lu, %lu, %lu)\n",
-          reward_size, value_size, qvest_size);
-      return;
-    }
+    assert(reward_buf().size() != 0);
+    assert(value_buf().size() != 0);
+    assert(qvest_buf().size() != 0);
     for(int i=0; i<std::min<int>(frame_stack-1, epi.length); i++) {
       long idx = (epi.offset + i) % max_step;
       prt.set_weight(idx, 0.0);
@@ -650,11 +519,12 @@ protected:
     }
     for(int i=(frame_stack-1); i<epi.length-multi_step; i++) {
       long idx = (epi.offset + i) % max_step;
-      auto& prev = data[idx];
+      auto prev_value  = data[idx].value(this).as_array<float>();
+      auto prev_qvest  = data[idx].qvest(this).as_array<float>();
       // R is computed with TD-lambda, while V is the original value in prediction
       float priority = 0;
-      for(int i=0; i<(int)prev.qvest(this).size(); i++)
-        priority += reward_coeff[i] * fabs(prev.qvest(this)[i] - prev.value(this)[i]);
+      for(int i=0; i<(int)prev_qvest.size(); i++)
+        priority += reward_coeff[i] * fabs(prev_qvest[i] - prev_value[i]);
       priority = pow(priority, priority_exponent);
       prt.set_weight(idx, prt.get_weight(idx) * priority);
     }
@@ -699,12 +569,12 @@ public:
    * @param weight  sample weight (priority)
    */
   void add_entry(
-      const state_t  * p_s,
-      const action_t * p_a,
-      const reward_t * p_r,
-      const prob_t   * p_p,
-      const value_t  * p_v,
-      const info_t   * p_i,
+      const void * p_s,
+      const void * p_a,
+      const void * p_r,
+      const void * p_p,
+      const void * p_v,
+      const void * p_i,
       float weight)
   {
     if(!episode.empty() and new_offset != get_offset_for_new())
@@ -721,6 +591,25 @@ public:
     new_length += 1;
   }
 
+  void add_entry(
+      const BufView& s,
+      const BufView& a,
+      const BufView& r,
+      const BufView& p,
+      const BufView& v,
+      const BufView& i,
+      float weight)
+  {
+    // Check buffer info
+    qassert(state_buf().is_consistent_with(s));
+    qassert(action_buf().is_consistent_with(a));
+    qassert(reward_buf().is_consistent_with(r));
+    qassert(prob_buf().is_consistent_with(p));
+    qassert(value_buf().is_consistent_with(v));
+    qassert(info_buf().is_consistent_with(i));
+    return add_entry(s.ptr_, a.ptr_, r.ptr_, p.ptr_, v.ptr_, i.ptr_, weight);
+  }
+
   /**
    * Get a data cache to be pushed to remote.
    * 
@@ -732,30 +621,46 @@ public:
       qlog_warning("%s() failed as the ReplayMemory is empty.\n", __func__);
       return false;
     }
+    if(prt.get_weight_sum() <= 0) {
+      qlog_warning("%s() failed as local weight sum is %lf <= 0.\n", __func__, prt.get_weight_sum());
+      return false;
+    }
     for(size_t i=0; i<cache_size; i++) {
-      long idx = prt.sample_index(); 
+      long idx;
+      do {
+        idx = prt.sample_index();
+      } while (prt.get_weight(idx) <= 0);
       DataSample& s = p_cache->get(i, this);
       // add to batch
       for(int j=frame_stack-1; j>=0; j--) {
         auto& prev_entry = data[(idx - j) % max_step];
         prev_entry.to_memory(this, (frame_stack-1-j),
-            s.prev_state(this).data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+            s.prev_state(this).ptr_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
         if(j==0)
           prev_entry.to_memory(this, 0,
-              nullptr, s.prev_action(this).data(), s.prev_reward(this).data(), s.prev_prob(this).data(),
-              s.prev_value(this).data(), s.prev_qvest(this).data(), s.prev_info(this).data());
+              nullptr,
+              s.prev_action(this).ptr_,
+              s.prev_reward(this).ptr_,
+              s.prev_prob(this).ptr_,
+              s.prev_value(this).ptr_,
+              s.prev_qvest(this).ptr_,
+              s.prev_info(this).ptr_);
       }
       for(int j=frame_stack-1; j>=0; j--) {
         auto& next_entry = data[(idx - j + multi_step) % max_step];
         next_entry.to_memory(this, (frame_stack-1-j),
-            s.next_state(this).data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+            s.next_state(this).ptr_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
         if(j==0)
           next_entry.to_memory(this, 0,
-              nullptr, s.next_action(this).data(), s.next_reward(this).data(), s.next_prob(this).data(),
-              s.next_value(this).data(), s.next_qvest(this).data(), s.next_info(this).data());
+              nullptr,
+              s.next_action(this).ptr_,
+              s.next_reward(this).ptr_,
+              s.next_prob(this).ptr_,
+              s.next_value(this).ptr_,
+              s.next_qvest(this).ptr_,
+              s.next_info(this).ptr_);
       }
-      if(s.entry_weight(this).data())
-        s.entry_weight(this)[0] = prt.get_weight(idx);
+      s.entry_weight(this).as_array<float>()[0] = prt.get_weight(idx);
     }
     out_sum_weight = prt.get_weight_sum();
     return true;
@@ -779,8 +684,8 @@ public:
     DataEntry payload;   // placeholder for actual payload. Note that sizeof(DataEntry) is 0.
   };
 
-  static int reqbuf_size()  { return sizeof(Message) + sizeof(int); }  // for ProtocalCounter
-  static int repbuf_size()  { return sizeof(Message) + sizeof(ReplayMemory); } // for ProtocalSizes
+  static int reqbuf_size()  { return sizeof(Message) + sizeof(int); }  // ProtocalCounter
+  static int repbuf_size()  { return sizeof(Message) + N_VIEW * sizeof(BufView::Data) + sizeof(ReplayMemory); } // ProtocalSizes
   static int pushbuf_size() { return sizeof(Message); }
 
   enum Mode {
@@ -793,5 +698,5 @@ public:
 /**
  * Default data type for ReplayMemory 
  */
-typedef ReplayMemory<uint8_t, float, float> RM;
+typedef ReplayMemory RM;
 

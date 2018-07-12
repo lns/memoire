@@ -5,20 +5,27 @@ import os, time
 from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
-# Here we config the state_size, action_size, reward_size, prob_size, value_size in the server
-sizes = (1,1,1,0,1,1,1)
-server = ReplayMemoryServer(*sizes, max_step=0, n_caches=4, pub_endpoint="tcp://*:5560")
+# Here we config the state_size, action_size, reward_size, prob_size, value_size, qvest_size, info_size in the server
+s = np.ndarray([2], dtype=np.uint64)
+a = np.ndarray([1], dtype=np.int32)
+r = np.ndarray([], dtype=np.float32)
+p = np.ndarray([], dtype=np.float32)
+v = np.ndarray([], dtype=np.float32)
+q = np.ndarray([], dtype=np.float32)
+i = np.ndarray([1], dtype=np.uint8)
+template = (s,a,r,p,v,q,i)
+server = ReplayMemoryServer(*template, max_step=0, n_caches=4, pub_endpoint="tcp://*:5560")
 rem = server.rem
 
 rem.priority_exponent = 0.0
 rem.mix_lambda = 1.0
 rem.frame_stack = 4
-rem.multi_step = 1
-rem.cache_size = 4
+rem.multi_step = 2
+rem.cache_size = 16
 rem.discount_factor = [0.0]
 rem.reward_coeff = [1.0]
-server.print_info()
 rem.cache_flags = [1,1,1,0,1,1,1, 1,1,1,0,1,1,1]
+server.print_info()
 batch_size = 4
 
 threads = []

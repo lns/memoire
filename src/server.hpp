@@ -28,14 +28,15 @@ public:
   size_t total_steps;                ///< counter of total steps
   std::mutex counter_mutex;
 
-  ReplayMemoryServer(size_t s_size, size_t a_size, size_t r_size, size_t p_size, size_t v_size, size_t q_size, size_t i_size,
-      size_t max_step, qlib::RNG * prt_rng, const char* pub_endpoint, int n_caches)
-    : rem{s_size, a_size, r_size, p_size, v_size, q_size, i_size, max_step, prt_rng}, ctx{nullptr},
+  ReplayMemoryServer(const BufView * vw, size_t max_step, qlib::RNG * prt_rng, const char* pub_endpoint, int n_caches)
+    : rem{vw, max_step, prt_rng}, ctx{nullptr},
     caches{0}, cache_prt{prt_rng, n_caches},
     total_caches{0}, total_episodes{0}, total_steps{0}
   {
     ctx = zmq_ctx_new(); qassert(ctx);
     caches.resize(n_caches);
+    sample_index.resize(n_caches, 0);
+    cache_index = 0;
     // PUB endpoint
     if(pub_endpoint and strcmp(pub_endpoint, "")) {
       pssoc = zmq_socket(ctx, ZMQ_PUB); qassert(pssoc);
@@ -87,20 +88,20 @@ public:
    * @return true iff success
    */
   bool get_batch(size_t batch_size,
-      typename RM::state_t  * prev_s,
-      typename RM::action_t * prev_a,
-      typename RM::reward_t * prev_r,
-      typename RM::prob_t   * prev_p,
-      typename RM::value_t  * prev_v,
-      typename RM::qvest_t  * prev_q,
-      typename RM::info_t   * prev_i,
-      typename RM::state_t  * next_s,
-      typename RM::action_t * next_a,
-      typename RM::reward_t * next_r,
-      typename RM::prob_t   * next_p,
-      typename RM::value_t  * next_v,
-      typename RM::qvest_t  * next_q,
-      typename RM::info_t   * next_i,
+      void * prev_s,
+      void * prev_a,
+      void * prev_r,
+      void * prev_p,
+      void * prev_v,
+      void * prev_q,
+      void * prev_i,
+      void * next_s,
+      void * next_a,
+      void * next_r,
+      void * next_p,
+      void * next_v,
+      void * next_q,
+      void * next_i,
       float * entry_weight_arr)
   {
     if(total_caches < caches.size()) {
@@ -142,6 +143,33 @@ public:
   }
 
   /**
+   * Get BufView of batch data
+   *
+   * @param batch_size
+   *
+   * @return prev s,a,r,p,v,q,i, next s,a,r,p,v,q,i
+   */
+  std::vector<BufView> get_batch_view(size_t batch_size) {
+    std::vector<BufView> ret(2*N_VIEW);
+    for(int i=0; i<2*N_VIEW; i++) {
+      ret[i] = rem.view[i % N_VIEW];
+      // frame_stack
+      if(i % N_VIEW == 0)
+        ret[i].shape_.insert(ret[i].shape_.begin(), (ssize_t)rem.frame_stack);
+      if(rem.cache_flags[i])
+        ret[i].shape_.insert(ret[i].shape_.begin(), (ssize_t)batch_size);
+      else
+        ret[i].shape_.insert(ret[i].shape_.begin(), 0);
+      ret[i].make_c_stride();
+      if(i % N_VIEW == 0)
+        assert(ret[i][0][0].is_consistent_with(rem.view[i % N_VIEW]));
+      else
+        assert(ret[i][0].is_consistent_with(rem.view[i % N_VIEW]));
+    }
+    return ret;
+  }
+
+  /**
    * Responsible for answering the request of GetSizes.
    */
   void rep_worker_main(const char * endpoint, typename RM::Mode mode)
@@ -164,7 +192,10 @@ public:
       rets->sender = rem.uuid;
       if(args->type == Message::ProtocalSizes) {
         // return sizes
-        RM * p = reinterpret_cast<RM *>(&rets->payload);
+        auto vw = ArrayView<BufView::Data>(&rets->payload, N_VIEW);
+        RM * p = reinterpret_cast<RM *>((char*)vw.data() + vw.nbytes());
+        for(int i=0; i<N_VIEW; i++)
+          vw[i].from(rem.view[i]);
         // memcpy. Only primary objects are valid.
         memcpy(p, &rem, sizeof(RM));
         //qlog_info("REP: ProtocalSizes\n");
@@ -179,7 +210,7 @@ public:
           total_steps += *p_length;
         }
         //qlog_info("REP: ProtocalCounter: total_steps: %lu\n", total_steps);
-        ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
+        ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0)); // TODO: This is wasting..
       }
       else
         qthrow("Unknown args->type");
@@ -200,6 +231,7 @@ public:
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
     if(caches.entry_size != Cache::nbytes(&rem)) { 
+      std::lock_guard<std::mutex> guard(cache_mutex);
       size_t n_caches = caches.size();
       caches.~Vector<Cache>();
       new(&caches) Vector<Cache>(Cache::nbytes(&rem));

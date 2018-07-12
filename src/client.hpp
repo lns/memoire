@@ -57,7 +57,7 @@ public:
     pushbuf.resize(RM::pushbuf_size());
     push = reinterpret_cast<Message*>(pushbuf.data());
     // Empty RM
-    prm = new RM{0,0,0,0,0,0,0,0,&lcg64};
+    prm = nullptr; //new RM{0,0,0,0,0,0,0,0,&lcg64};
   }
 
   ~ReplayMemoryClient() {
@@ -88,15 +88,20 @@ public:
     ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
     qassert(rep->type == req->type);
     // Get sizes
-    RM * p = reinterpret_cast<RM*>(&rep->payload);
-    prm = new RM{p->state_size, p->action_size, p->reward_size, p->prob_size, p->value_size, p->qvest_size, p->info_size,
-      max_step, &lcg64};
+    Message * rets = reinterpret_cast<Message*>(repbuf.data());
+    auto vw = ArrayView<BufView::Data>(&rets->payload, N_VIEW);
+    RM * p = reinterpret_cast<RM*>((char*)vw.data() + vw.nbytes());
+    BufView view[N_VIEW];
+    for(int i=0; i<N_VIEW; i++)
+      vw[i].to(view[i]);
+    prm = new RM{view, max_step, &lcg64};
     // Sync parameters
     prm->priority_exponent = p->priority_exponent;
-    prm->mix_lambda = p->mix_lambda;
+    prm->mix_lambda  = p->mix_lambda;
     prm->frame_stack = p->frame_stack;
     prm->multi_step  = p->multi_step;
     prm->cache_size  = p->cache_size;
+    prm->reuse_cache = p->reuse_cache;
     std::copy(std::begin(p->discount_factor), std::end(p->discount_factor), std::begin(prm->discount_factor));
     std::copy(std::begin(p->reward_coeff), std::end(p->reward_coeff), std::begin(prm->reward_coeff));
     std::copy(std::begin(p->cache_flags), std::end(p->cache_flags), std::begin(prm->cache_flags));

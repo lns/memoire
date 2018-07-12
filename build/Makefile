@@ -14,7 +14,7 @@ else
 	BACKWARD_LD=
 endif
 
-PY27INC=`python2.7 -m pybind11 --includes`
+PY27INC=-I$(HOME)/ext/pybind11/include `python2.7 -m pybind11 --includes`
 PY34INC=`python3.4 -m pybind11 --includes`
 PY36INC=-I$(ROOT)/include/python3.6m
 

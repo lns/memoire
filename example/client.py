@@ -11,24 +11,20 @@ client.sync_sizes(65536)
 rem = client.rem
 rem.print_info()
 
-s = np.ndarray((rem.state_size), dtype=np.uint8)
-a = np.ndarray((rem.action_size), dtype=np.float32)
-r = np.ndarray((rem.reward_size), dtype=np.float32)
-p = np.ndarray((rem.prob_size), dtype=np.float32)
-v = np.ndarray((rem.value_size), dtype=np.float32)
-i = np.ndarray((rem.info_size), dtype=np.uint8)
+s,a,r,p,v,i = rem.get_entry_buf();
 
 time.sleep(1)
 try:
-  for n_games in range(10):
+  for game_idx in range(100):
     rem.new_episode()
-    for step in range(1000):
-      s.fill(n_games)
-      a[0] = step
-      r[0] = 1
-      v[0] = -1
-      i[0] = step
-      rem.add_entry(s, a, r, p, v, i, weight=1.0)
+    for step in range(6):
+      s.fill(game_idx*1000 + step)
+      a.fill(step)
+      r.fill(1)
+      p.fill(0)
+      v.fill(0.5)
+      i.fill(False)
+      rem.add_entry(s,a,r,p,v,i, weight=1.0)
     rem.close_episode()
     client.update_counter()
     assert 0 == client.push_cache()

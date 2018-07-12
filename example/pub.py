@@ -5,8 +5,15 @@ import os, time
 from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
-sizes = (1,1,1,0,1,1,1)
-server = ReplayMemoryServer(*sizes, max_step=0, n_caches=0, pub_endpoint="tcp://*:5560")
+s = np.ndarray([1], dtype=np.float32)
+a = np.ndarray([1], dtype=np.float32)
+r = np.ndarray([1], dtype=np.float32)
+p = np.ndarray([], dtype=np.float32)
+v = np.ndarray([1], dtype=np.float32)
+q = np.ndarray([1], dtype=np.float32)
+i = np.ndarray([1], dtype=np.float32)
+template = (s,a,r,p,v,q,i)
+server = ReplayMemoryServer(*template, max_step=0, n_caches=0, pub_endpoint="tcp://*:5560")
 
 try:
   time.sleep(1)

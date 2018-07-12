@@ -16,6 +16,7 @@ public:
   
   T * data() const { return reinterpret_cast<T*>(data_); }
   size_t size() const { return entry_num_; };
+  size_t nbytes() const { return entry_num_ * entry_size; }
 
   /**
    * Constructor
