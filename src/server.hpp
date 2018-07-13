@@ -179,15 +179,13 @@ public:
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
-    int reqbuf_size = rem.reqbuf_size();
-    char * reqbuf = (char*)malloc(reqbuf_size); qassert(reqbuf);
-    int repbuf_size = rem.repbuf_size();
-    char * repbuf = (char*)malloc(repbuf_size); qassert(repbuf);
-    Message * args = reinterpret_cast<Message*>(reqbuf);
-    Message * rets = reinterpret_cast<Message*>(repbuf);
+    Mem reqbuf(rem.reqbuf_size());
+    Mem repbuf(rem.repbuf_size());
+    Message * args = reinterpret_cast<Message*>(reqbuf.data());
+    Message * rets = reinterpret_cast<Message*>(repbuf.data());
     int size;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, reqbuf, reqbuf_size, 0)); qassert(size <= reqbuf_size);
+      ZMQ_CALL(size = zmq_recv(soc, reqbuf.data(), reqbuf.size(), 0)); qassert(size <= reqbuf.size());
       rets->type = args->type;
       rets->sender = rem.uuid;
       if(args->type == Message::ProtocalSizes) {
@@ -199,7 +197,7 @@ public:
         // memcpy. Only primary objects are valid.
         memcpy(p, &rem, sizeof(RM));
         //qlog_info("REP: ProtocalSizes\n");
-        ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0));
+        ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
       }
       else if(args->type == Message::ProtocalCounter) {
         // Update counters
@@ -210,14 +208,12 @@ public:
           total_steps += *p_length;
         }
         //qlog_info("REP: ProtocalCounter: total_steps: %lu\n", total_steps);
-        ZMQ_CALL(zmq_send(soc, repbuf, repbuf_size, 0)); // TODO: This is wasting..
+        ZMQ_CALL(zmq_send(soc, repbuf.data(), sizeof(Message), 0)); //
       }
       else
         qthrow("Unknown args->type");
     }
     // never
-    free(reqbuf);
-    free(repbuf);
     zmq_close(soc);
   }
 
