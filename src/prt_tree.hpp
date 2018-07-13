@@ -118,17 +118,17 @@ public:
   int sample_index() {
     int s=1;
     while(s < size_) {
-      assert(0.0 <= w_[2*s]);
-      assert(w_[2*s] <= w_[s]);
-      assert(0.0 <= w_[2*s+1]);
-      assert(w_[2*s+1] <= w_[s]);
+      //assert(0.0 <= w_[2*s]);
+      //assert(w_[2*s] <= w_[s]);
+      //assert(0.0 <= w_[2*s+1]);
+      //assert(w_[2*s+1] <= w_[s]);
       double r;
       do {
         r = rng_->drand();
       } while(r <= 0.0 or r >= 1.0);
       r *= w_[s];
-      assert(0.0 <= r);
-      assert(r <= w_[s]);
+      //assert(0.0 <= r);
+      //assert(r <= w_[s]);
 #if 0
       if(w_[2*s] > 0.0 and w_[2*s+1] < 1.0 and r > w_[2*s]) { // debug
         qlog_warning("w[%d]:%f = w[%d]:%f + w[%d]:%f, r: %le\n", s, w_[s], 2*s, w_[2*s], 2*s+1, w_[2*s+1], r);
