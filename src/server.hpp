@@ -61,11 +61,16 @@ public:
    * Publish a byte string to clients
    */
   void pub_bytes(const std::string& topic, const std::string& message) {
+    static qlib::Timer timer;
     if(not pssoc)
       qlog_error("PUB/SUB socket is not opened.\n");
     //qlog_info("Send topic: %s\n", topic.c_str());
+    timer.start();
     ZMQ_CALL(zmq_send(pssoc, topic.data(), topic.size(), ZMQ_SNDMORE));
     ZMQ_CALL(zmq_send(pssoc, message.data(), message.size(), 0));
+    timer.stop();
+    if(timer.cnt() % 100 == 0)
+      qlog_info("%s(): n: %lu, min: %f, avg: %f, max: %f\n", __func__, timer.cnt(), timer.min(), timer.avg(), timer.max());
   }
   
   /**

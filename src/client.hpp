@@ -112,7 +112,7 @@ public:
   /**
    * Blocked Receive of Bytestring
    */
-  const std::string sub_bytes(std::string topic) {
+  std::string sub_bytes(std::string topic) {
     if(not pssoc)
       qlog_error("PUB/SUB socket is not connected.\n");
     static Mem topicbuf(256);
