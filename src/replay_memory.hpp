@@ -364,22 +364,22 @@ public:
       each = 1;
   }
 
-  void check() const {
+  bool check() const {
     qassert(prob_buf().format_   == "f");
     qassert(reward_buf().format_ == "f");
     qassert(value_buf().format_  == "f");
     qassert(qvest_buf().format_  == "f");
     if(prob_buf().ndim() > 0)
-      qlog_warning("prob (%s) should be a single number.\n",
+      qlog_error("prob (%s) should be a single number.\n",
           prob_buf().str().c_str());
     if(reward_buf().ndim() > 1)
-      qlog_warning("reward (%s) should be a single number or a 1-dim array.\n",
+      qlog_error("reward (%s) should be a single number or a 1-dim array.\n",
           reward_buf().str().c_str());
     if(value_buf().size() and value_buf().shape_ != reward_buf().shape_)
-      qlog_warning("value shape (%s) should match reward shape (%s) or be zero.\n",
+      qlog_error("value shape (%s) should match reward shape (%s) or be zero.\n",
           value_buf().str().c_str(), reward_buf().str().c_str());
     if(qvest_buf().size() and qvest_buf().shape_ != reward_buf().shape_)
-      qlog_warning("qvest shape (%s) should match reward shape (%s) or be zero.\n",
+      qlog_error("qvest shape (%s) should match reward shape (%s) or be zero.\n",
           qvest_buf().str().c_str(), reward_buf().str().c_str());
     qassert(state_buf().is_c_contiguous());
     qassert(action_buf().is_c_contiguous());
