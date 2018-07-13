@@ -6,13 +6,13 @@ from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
 from threading import Thread
 
 # Here we config the state_size, action_size, reward_size, prob_size, value_size, qvest_size, info_size in the server
-s = np.ndarray([2], dtype=np.uint64)
+s = np.ndarray([84,84], dtype=np.uint8)
 a = np.ndarray([1], dtype=np.int32)
-r = np.ndarray([], dtype=np.float32)
+r = np.ndarray([2], dtype=np.float32)
 p = np.ndarray([], dtype=np.float32)
-v = np.ndarray([], dtype=np.float32)
-q = np.ndarray([], dtype=np.float32)
-i = np.ndarray([1], dtype=np.uint8)
+v = np.ndarray([2], dtype=np.float32)
+q = np.ndarray([2], dtype=np.float32)
+i = np.ndarray([1], dtype=np.bool)
 template = (s,a,r,p,v,q,i)
 server = ReplayMemoryServer(*template, max_step=0, n_caches=4, pub_endpoint="tcp://*:5560")
 rem = server.rem
@@ -48,6 +48,7 @@ try:
     print(prev_e)
     print(next_e)
     print(weight)
+    print('total_episodes: %d' % server.total_episodes)
 except KeyboardInterrupt:
   pass
 os.kill(os.getpid(), 9)

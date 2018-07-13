@@ -15,10 +15,10 @@ s,a,r,p,v,i = rem.get_entry_buf();
 
 time.sleep(1)
 try:
-  for game_idx in range(100):
+  for game_idx in range(10000):
     rem.new_episode()
     for step in range(6):
-      s.fill(game_idx*1000 + step)
+      s.fill(game_idx*10 + step)
       a.fill(step)
       r.fill(1)
       p.fill(0)

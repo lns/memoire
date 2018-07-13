@@ -2,6 +2,7 @@
 
 ROOT=..
 ENABLE_DEBUG=1
+PYBIND11_ROOT=$(HOME)/ext/pybind11
 
 CXX=g++
 CXXFLAGS=-std=c++11 -O2 -Wall -D_GLIBCXX_USE_CXX11_ABI=0 -g
@@ -14,9 +15,8 @@ else
 	BACKWARD_LD=
 endif
 
-PY27INC=-I$(HOME)/ext/pybind11/include `python2.7 -m pybind11 --includes`
+PY27INC=-I$(PYBIND11_ROOT)/include `python2.7 -m pybind11 --includes`
 PY34INC=`python3.4 -m pybind11 --includes`
-PY36INC=-I$(ROOT)/include/python3.6m
 
 PYINC=$(PY27INC)
 

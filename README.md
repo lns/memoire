@@ -71,6 +71,7 @@ and update the model efficiently by the flavor of prioritized sampling.
 See `example/`
 
 ## Build
+The module is based on [pybind11](https://github.com/pybind/pybind11). We recommend to clone the latest version of pybind11 from github, and set the `PYBIND11_ROOT` properly in [Makefile](build/Makefile).
 We support different version of python. To use this module, firstly choose your python version in [Makefile](build/Makefile)
 ```make
 PYINC=$(PY27INC)
@@ -85,13 +86,14 @@ import memoire
 ```
 
 ## Dependency
-ZeroMQ, google-test, pybind11, libbfd (for debug)
+ZeroMQ, google-test, pybind11, libbfd (for debug).
+```shell
+yum install zeromq-devel binutils-devel gtest-devel
+pip install pybind11
+```
 
 ## Documentation
-(TODO) See source code
-
-## TODO
-+ Variable size of state
+See [API](docs/API.md) for reference.
 
 ## Reference
 + [[1] T.Schaul et al. **Prioritized Experience Replay**](https://arxiv.org/abs/1511.05952)
