@@ -19,7 +19,7 @@ public:
 
   Vector<Cache> caches;              ///< caches of data collected from actors
   PrtTree cache_prt;                 ///< PrtTree for sampling
-  std::vector<int> sample_index;     ///< number of samples used for each cache
+  std::vector<size_t> sample_index;  ///< number of samples used for each cache
   int cache_index;                   ///< index of oldest cache (to be overwritten by new one)
   size_t total_caches;               ///< counter of total caches
   std::mutex cache_mutex;
@@ -185,7 +185,7 @@ public:
     Message * rets = reinterpret_cast<Message*>(repbuf.data());
     int size;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, reqbuf.data(), reqbuf.size(), 0)); qassert(size <= reqbuf.size());
+      ZMQ_CALL(size = zmq_recv(soc, reqbuf.data(), reqbuf.size(), 0)); qassert(size <= (int)reqbuf.size());
       rets->type = args->type;
       rets->sender = rem.uuid;
       if(args->type == Message::ProtocalSizes) {
@@ -247,7 +247,7 @@ public:
       cache_index = (cache_index + 1) % caches.size();
     }
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size <= buf.size());
+      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size <= (int)buf.size());
       if(args->type == Message::ProtocalCache) {
         qassert(args->length == (int)expected_size);
         //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
