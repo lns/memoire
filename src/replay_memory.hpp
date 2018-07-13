@@ -364,7 +364,7 @@ public:
       each = 1;
   }
 
-  bool check() const {
+  void check() const {
     qassert(prob_buf().format_   == "f");
     qassert(reward_buf().format_ == "f");
     qassert(value_buf().format_  == "f");

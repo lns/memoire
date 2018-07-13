@@ -115,8 +115,13 @@ public:
   const std::string sub_bytes(std::string topic) {
     if(not pssoc)
       qlog_error("PUB/SUB socket is not connected.\n");
-    ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
-    thread_local Mem topicbuf(256);
+    static Mem topicbuf(256);
+    static std::string last_topic("");
+    if(last_topic != "")
+      ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_UNSUBSCRIBE, last_topic.c_str(), last_topic.size()));
+    last_topic = topic;
+    if(topic != "")
+      ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
     int size;
     while(true) {
       memset(topicbuf.data(), 0, topicbuf.size());
@@ -126,6 +131,7 @@ public:
       // Recv Message
       ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0));
       if(strcmp((const char*)topicbuf.data(), topic.data())) { // topic mismatch
+        qlog_warning("topic mismatch: '%s' != '%s'\n", (const char *)topicbuf.data(), topic.c_str());
         continue;
       }
       if(not (size <= (int)subbuf.size())) {
