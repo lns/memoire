@@ -17,13 +17,10 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire v2, ver 18.07.12, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire v2, ver 18.07.16, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
-typedef py::array_t<int, py::array::c_style> pyarr_int;
-typedef py::array_t<uint64_t, py::array::c_style> pyarr_ulong;
-typedef py::array_t<uint8_t, py::array::c_style> pyarr_char;
 
 typedef BufView BV;
 
@@ -35,7 +32,7 @@ BufView AS_BV(py::buffer& b) {
 }
 
 PYBIND11_MODULE(memoire /* module name */, m) {
-  m.doc() = "Memoire"; // TODO
+  m.doc() = "Memoire, a distributed prioritized replay memory";
 
   py::class_<BV>(m, "BufView")
     .def_readonly("ptr", &BV::ptr_)

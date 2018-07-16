@@ -13,13 +13,13 @@ In this class, we define the following properties
 class ReplayMemory:
 
   # Read only properties
-  state_size    # size of state  (dtype = np.uint8)
-  action_size   # size of action (dtype = np.float32)
-  reward_size   # size of reward (dtype = np.float32)
-  prob_size     # size of prob   (dtype = np.float32)
-  value_size    # size of value  (dtype = np.float32)
-  qvest_size    # size of qvalue (dtype = np.float32)
-  info_size     # size of info   (dtype = np.uint8)
+  state_buf     # buffer template for state
+  action_buf    # buffer template for action
+  reward_buf    # buffer template for reward, must have dtype = float32
+  prob_buf      # buffer template for prob, must have shape = []
+  value_buf     # buffer template for value, must have dtype = float32 and the same shape as reward_buf
+  qvest_buf     # buffer template for qvest, must have dtype = float32 and the same shape as reward_buf
+  info_buf      # buffer template for info
   entry_size    # byte size of (s,a,r,p,v,q,i)
   max_step      # max number of sample can be stored in this ReplayMemory
   uuid          # universally unique identifier for this instance
@@ -32,15 +32,15 @@ class ReplayMemory:
   cache_size          # number of samples in a cache
   max_episode         # max number of episodes allowed in this ReplayMemory
   reuse_cache         # whether to discard used cache or to reuse them
-  discount_factor     # \gamma: the (multidimensional) discount factor used for cumulate reward (should match `reward_size`)
-  reward_coeff        # mixture coefficient for multi-dimensional reward (should match `reward_size`)
-  cache_flags         # whether previous (s,a,r,p,v) and next (s,a,r,p,v) should be cached in caches
+  discount_factor     # \gamma: the (multidimensional) discount factor used for cumulate reward
+  reward_coeff        # mixture coefficient for multi-dimensional reward
+  cache_flags         # whether previous (s,a,r,p,v,q,i) and next (s,a,r,p,v,q,i) should be cached in caches
 ```
 The `ReplayMemory` supports the following methods as
 ```python
 class ReplayMemory:
 
-  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, qvest_size, info_size, max_step):
+  def __init__(self, state_buf, action_buf, reward_buf, prob_buf, value_buf, qvest_buf, info_buf, max_step):
     """ Constructe a ReplayMemory with these properties """
     pass
 
@@ -84,15 +84,15 @@ class ReplayMemory:
     The behaviour of adding entries to a closed episode is undefined and should be avoided.
     The number of `num_episode()` may decrease by 1 if space is insufficient.
 
-    :param  s: state   (np.array of np.uint8)
-    :param  a: action  (np.array of np.float32)
-    :param  r: reward  (np.array of np.float32)
-    :param  p: prob    (np.array of np.float32)
-    :param  v: value   (np.array of np.float32)
-    :param  i: info    (np.array of np.uint8)
-    :param  init_w: initial sample weight (normally 1.0) """
+    :param  s: state   (should match state_buf)
+    :param  a: action  (should match action_buf)
+    :param  r: reward  (should match reward_buf)
+    :param  p: prob    (should match prob_buf)
+    :param  v: value   (should match value_buf)
+    :param  i: info    (should match info_buf)
+    :param  init_w:    initial sample weight (normally 1.0) """
     pass
-    
+ 
 ```
 
 ### ReplayMemoryServer
@@ -108,7 +108,7 @@ class ReplayMemoryServer
   total_caches
   total_steps
 
-  def __init__(self, state_size, action_size, reward_size, prob_size, value_size, qvest_size, info_size, \
+  def __init__(self, state_buf, action_buf, reward_buf, prob_buf, value_buf, qvest_buf, info_buf, \
               max_step, pub_endpoint, n_caches):
     """ Initialize a ReplayMemoryServer
 
@@ -117,7 +117,7 @@ class ReplayMemoryServer
     pass
 
   def rep_worker_main(self, endpoint, mode):
-    """ Mainloop for a REP worker 
+    """ Mainloop for a REP worker
 
     a REP worker is responsible for receiving counter update (`n_episode` and `n_steps`)
     and also responsing `GetSizes` requests.
