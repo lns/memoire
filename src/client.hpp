@@ -148,8 +148,10 @@ public:
    * Should be called after closing an episode
    */
   void update_counter() {
+    static qlib::Timer timer;
     if(not rrsoc)
       qlog_error("REQ/REP socket is not connected.\n");
+    timer.start();
     req->type = Message::ProtocalCounter;
     req->sender = prm->uuid;
     int * p_length = reinterpret_cast<int *>(&req->payload);
@@ -157,6 +159,10 @@ public:
     //qlog_info("%s(): length: %d\n",__func__, *p_length);
     ZMQ_CALL(zmq_send(rrsoc, reqbuf.data(), reqbuf.size(), 0));
     ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
+    timer.stop();
+    if(timer.cnt() % 100 == 0)
+      qlog_info("%s(): n: %lu, min: %f , avg: %f, max: %f (msec)\n",
+          __func__, timer.cnt(), timer.min(), timer.avg(), timer.max());
   }
 
   /**
