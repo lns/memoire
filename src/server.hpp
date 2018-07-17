@@ -294,8 +294,8 @@ public:
         qassert(size == args->length);
         if(logfile) {
           std::lock_guard<std::mutex> guard(logfile_mutex);
-          fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), rem.uuid, msg_buf.c_str());
-          //fflush(logfile);
+          fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), args->sender, msg_buf.c_str());
+          fflush(logfile);
         }
       }
       else
