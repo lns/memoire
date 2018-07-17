@@ -25,6 +25,7 @@ rem.cache_size = 16
 rem.discount_factor = [0.0]
 rem.reward_coeff = [1.0]
 rem.cache_flags = [1,1,1,0,1,1,1, 1,1,1,0,1,1,1]
+server.set_logfile("actors.log", "w")
 server.print_info()
 batch_size = 4
 

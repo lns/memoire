@@ -185,6 +185,20 @@ public:
     return 0;
   }
 
+  /**
+   * Write a log to server
+   */
+  void write_log(const std::string& msg) {
+    if(not ppsoc)
+      qlog_error("PUSH/PULL socket is not connected.\n");
+    push->type = Message::ProtocalLog;
+    push->length = (int)msg.size();
+    push->sender = prm->uuid;
+    push->sum_weight = 0.0;
+    ZMQ_CALL(zmq_send(ppsoc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(ppsoc, msg.data(), push->length, 0));
+  }
+
 };
 
 typedef ReplayMemoryClient<RM> RMC;

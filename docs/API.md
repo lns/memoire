@@ -104,6 +104,7 @@ The class `ReplayMemoryServer` supports following methods
 class ReplayMemoryServer
   # Read-only properties
   rem                # Replay Memory
+  logfile            # Path of logfile
   total_episodes
   total_caches
   total_steps
@@ -114,6 +115,17 @@ class ReplayMemoryServer
 
     :param  pub_endpoint:   endpoint for PUB/SUB protocal
     :param  n_caches:       number of caches kept at the server side """
+    pass
+
+  def set_logfile(self, logfile_path, mode):
+    """ Set the path of logfile
+
+    Messages sent from actors will be written to this file. Each message contains the received time,
+    the uuid of the sender, and the actual message. The format is `'%s,%08x,%s\n' % (timestamp, uuid, message)`.
+    For performance issue, the messages are saved to disk with buffer.
+
+    :param  logfile_path:   path of logfile
+    :param  mode:           open mode (e.g. 'w', 'a') as in `man fopen`. """
     pass
 
   def rep_worker_main(self, endpoint, mode):
@@ -210,6 +222,12 @@ class ReplayMemoryClient
     The function returns 0 on cache sent successfully, or -1 on failure.
 
     :rtype: int """
+    pass
+
+  def write_log(self, log_message):
+    """ Send a log message to be saved to logfile at the server.
+
+    :param  log_message: a string of message to be sent """
     pass
 
   def sub_bytes(self, topic):

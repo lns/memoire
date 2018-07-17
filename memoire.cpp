@@ -159,6 +159,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("sync_sizes",     &RMC::sync_sizes,     py::call_guard<py::gil_scoped_release>())
     .def("update_counter", &RMC::update_counter, py::call_guard<py::gil_scoped_release>())
     .def("push_cache",     &RMC::push_cache,     py::call_guard<py::gil_scoped_release>())
+    .def("write_log",      &RMC::write_log,      py::call_guard<py::gil_scoped_release>())
     .def("sub_bytes", [](RMC& rmc, std::string topic) {
         py::gil_scoped_release release;
         std::string ret = rmc.sub_bytes(topic);
@@ -171,6 +172,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("total_caches", &RMS::total_caches)
     .def_readonly("total_episodes", &RMS::total_episodes)
     .def_readonly("total_steps", &RMS::total_steps)
+    .def_readonly("logfile", &RMS::logfile_path)
     .def(py::init([](py::buffer s, py::buffer a, py::buffer r, py::buffer p,
             py::buffer v, py::buffer q, py::buffer i,
             size_t capa, const char * pub_ep, int n_caches) {
@@ -194,6 +196,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         "max_step"_a,
         "pub_endpoint"_a,
         "n_caches"_a)
+    .def("set_logfile", &RMS::set_logfile)
     .def("print_info", [](RMS& rms) { rms.print_info(); })
     .def("rep_worker_main",  &RMS::rep_worker_main,  py::call_guard<py::gil_scoped_release>())
     .def("pull_worker_main", &RMS::pull_worker_main, py::call_guard<py::gil_scoped_release>())

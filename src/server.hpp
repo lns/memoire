@@ -28,10 +28,14 @@ public:
   size_t total_steps;                ///< counter of total steps
   std::mutex counter_mutex;
 
+  std::string logfile_path;          ///< path of logfile
+  FILE * logfile;                    ///< logfile object
+  std::mutex logfile_mutex;
+
   ReplayMemoryServer(const BufView * vw, size_t max_step, qlib::RNG * prt_rng, const char* pub_endpoint, int n_caches)
     : rem{vw, max_step, prt_rng}, ctx{nullptr},
     caches{0}, cache_prt{prt_rng, n_caches},
-    total_caches{0}, total_episodes{0}, total_steps{0}
+    total_caches{0}, total_episodes{0}, total_steps{0}, logfile{nullptr}
   {
     ctx = zmq_ctx_new(); qassert(ctx);
     caches.resize(n_caches);
@@ -45,6 +49,8 @@ public:
   }
 
   ~ReplayMemoryServer() {
+    if(logfile)
+      fclose(logfile);
     zmq_close(pssoc);
     zmq_ctx_destroy(ctx);
   }
@@ -54,7 +60,18 @@ public:
     fprintf(f, "total_episodes:%lu\n", total_episodes);
     fprintf(f, "total_caches:  %lu\n", total_caches);
     fprintf(f, "total_steps:   %lu\n", total_steps);
+    fprintf(f, "logfile:       %s\n",  logfile_path.c_str());
     rem.print_info(f);
+  }
+
+  void set_logfile(const std::string& filepath, const std::string& mode) {
+    std::lock_guard<std::mutex> guard(logfile_mutex);
+    if(logfile)
+      fclose(logfile);
+    logfile = fopen(filepath.c_str(), mode.c_str());
+    if(not logfile)
+      qlog_warning("Failed to open file '%s' with mode '%s'.\n", filepath.c_str(), mode.c_str());
+    logfile_path = filepath;
   }
 
   /**
@@ -267,6 +284,18 @@ public:
           cache_prt.set_weight(cache_index, 0.0);
           idx = cache_index;
           cache_index = (cache_index + 1) % caches.size();
+        }
+      }
+      else if(args->type == Message::ProtocalLog) {
+        thread_local std::string msg_buf;
+        if(args->length >= (int)msg_buf.size())
+          msg_buf.resize(args->length, '\0');
+        ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], msg_buf.size(), 0));
+        qassert(size == args->length);
+        if(logfile) {
+          std::lock_guard<std::mutex> guard(logfile_mutex);
+          fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), rem.uuid, msg_buf.c_str());
+          //fflush(logfile);
         }
       }
       else

@@ -676,6 +676,7 @@ public:
     static const int ProtocalCache   = 31;  // PUSH, PULL
     static const int ProtocalSizes   = 32;  // REP,  REQ
     static const int ProtocalCounter = 33;  // REP,  REQ
+    static const int ProtocalLog     = 34;  // PUSH, PULL
 
     int type;            // Message type
     int length;          // length of payload (in bytes)

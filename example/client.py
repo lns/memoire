@@ -27,6 +27,7 @@ try:
       rem.add_entry(s,a,r,p,v,i, weight=1.0)
     rem.close_episode()
     client.update_counter()
+    client.write_log("%d" % game_idx)
     assert 0 == client.push_cache()
 except KeyboardInterrupt:
   pass
