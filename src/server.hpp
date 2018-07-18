@@ -269,8 +269,10 @@ public:
       idx = cache_index;
       cache_index = (cache_index + 1) % caches.size();
     }
+    std::string msg_buf;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size <= (int)buf.size());
+      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size == (int)buf.size());
+      qassert(check_multipart(soc));
       if(args->type == Message::ProtocalCache) {
         qassert(args->length == (int)expected_size);
         //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
@@ -287,10 +289,13 @@ public:
         }
       }
       else if(args->type == Message::ProtocalLog) {
-        thread_local std::string msg_buf;
         if(args->length >= (int)msg_buf.size())
-          msg_buf.resize(args->length, '\0');
+          msg_buf.resize(args->length + 1, '\0');
         ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], msg_buf.size(), 0));
+        if(size != args->length) {
+          qlog_warning("%d != %d, buf: %lu\n", size, args->length, msg_buf.size());
+          qlog_info(" '%s' \n", &msg_buf[0]);
+        }
         qassert(size == args->length);
         msg_buf[size] = '\0';
         if(logfile) {

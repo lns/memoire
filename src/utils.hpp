@@ -39,3 +39,10 @@ protected:
 } while(0)
 #endif
 
+int64_t check_multipart(void * soc) {
+  int64_t more = 0;
+  size_t more_size = sizeof(more);
+  ZMQ_CALL(zmq_getsockopt(soc, ZMQ_RCVMORE, &more, &more_size));
+  return more;
+}
+
