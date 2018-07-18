@@ -292,9 +292,10 @@ public:
           msg_buf.resize(args->length, '\0');
         ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], msg_buf.size(), 0));
         qassert(size == args->length);
+        msg_buf[size] = '\0';
         if(logfile) {
           std::lock_guard<std::mutex> guard(logfile_mutex);
-          fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), args->sender, msg_buf.c_str());
+          fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), args->sender, msg_buf.data());
           fflush(logfile);
         }
       }
