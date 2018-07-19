@@ -419,6 +419,9 @@ public:
     fprintf(f, "reuse_cache:   %d\n",  reuse_cache);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
+    fprintf(f, "reqbuf_size    %d\n", reqbuf_size());
+    fprintf(f, "repbuf_size    %d\n", repbuf_size());
+    fprintf(f, "pushbuf_size   %d\n", pushbuf_size());
     fprintf(f, "discount_f:    [");
     for(int i=0; i<std::min<int>(reward_buf().size(), MAX_RWD_DIM); i++)
       fprintf(f, "%lf,", discount_factor[i]);

@@ -15,12 +15,15 @@ public:
   RM * prm;
 
 protected:
+  // ZeroMQ socket is not thread-safe, so a socket should only
+  // be used by a single thread at the same time.
   void * ctx;
-  void * rrsoc; // for request-reply
-  void * ppsoc; // for push-pull
-  void * pssoc; // for pub-sub
-  Mem reqbuf, repbuf, pushbuf, subbuf;
-  Message *req, *rep, *push, *sub;
+  void * rrsoc; // for sync_sizes()
+  void * ppsoc; // for push_cache()
+  void * lgsoc; // for write_log()
+  void * pssoc; // for sub_bytes()
+  Mem reqbuf, repbuf, pushbuf, subbuf, logbuf;
+  Message *req, *rep, *push, *sub, *log;
   Cache * cache_buf;
 
 public:
@@ -46,6 +49,8 @@ public:
     if(push_endpoint and 0!=strcmp(push_endpoint, "")) {
       ppsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(ppsoc);
       ZMQ_CALL(zmq_connect(ppsoc, push_endpoint));  
+      lgsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(lgsoc);
+      ZMQ_CALL(zmq_connect(lgsoc, push_endpoint));  
     }
     // Make bufs
     subbuf.resize(256); // TODO
@@ -56,6 +61,8 @@ public:
     rep  = reinterpret_cast<Message*>(repbuf.data());
     pushbuf.resize(RM::pushbuf_size());
     push = reinterpret_cast<Message*>(pushbuf.data());
+    logbuf.resize(RM::pushbuf_size());
+    log  = reinterpret_cast<Message*>(logbuf.data());
     // Empty RM
     prm = nullptr; //new RM{0,0,0,0,0,0,0,0,&lcg64};
   }
@@ -68,6 +75,7 @@ public:
     zmq_close(rrsoc);
     zmq_close(ppsoc);
     zmq_close(pssoc);
+    zmq_close(lgsoc);
     zmq_ctx_destroy(ctx);
   }
 
@@ -189,14 +197,14 @@ public:
    * Write a log to server
    */
   void write_log(const std::string& msg) {
-    if(not ppsoc)
-      qlog_error("PUSH/PULL socket is not connected.\n");
-    push->type = Message::ProtocalLog;
-    push->length = (int)msg.size();
-    push->sender = prm->uuid;
-    push->sum_weight = 0.0;
-    ZMQ_CALL(zmq_send(ppsoc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
-    ZMQ_CALL(zmq_send(ppsoc, msg.data(), push->length, 0));
+    if(not lgsoc)
+      qlog_error("PUSH/PULL (log) socket is not connected.\n");
+    log->type = Message::ProtocalLog;
+    log->length = (int)msg.size();
+    log->sender = prm->uuid;
+    log->sum_weight = 0.0;
+    ZMQ_CALL(zmq_send(lgsoc, logbuf.data(), logbuf.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(lgsoc, msg.data(), log->length, 0));
   }
 
 };

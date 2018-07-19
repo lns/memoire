@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <functional>
 #include "replay_memory.hpp"
+#include "hexdump.hpp"
 
 template<class RM>
 class ReplayMemoryServer : public non_copyable {
@@ -277,6 +278,10 @@ public:
         qassert(args->length == (int)expected_size);
         //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
         ZMQ_CALL(size = zmq_recv(soc, &caches[idx], expected_size, 0));
+        if(size != (int)expected_size) {
+          qlog_warning("To be fixed: %d != %d\n", size, (int)expected_size);
+          hexdump(stderr, &caches[idx], size);
+        }
         qassert(size == (int)expected_size);
         sample_index[idx] = 0;
         if(true) {
@@ -293,8 +298,8 @@ public:
           msg_buf.resize(args->length + 1, '\0');
         ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], msg_buf.size(), 0));
         if(size != args->length) {
-          qlog_warning("%d != %d, buf: %lu\n", size, args->length, msg_buf.size());
-          qlog_info(" '%s' \n", &msg_buf[0]);
+          qlog_warning("To be fixed: %d != %d, buf: %lu\n", size, args->length, msg_buf.size());
+          hexdump(stderr, &msg_buf[0], size);
         }
         qassert(size == args->length);
         msg_buf[size] = '\0';
