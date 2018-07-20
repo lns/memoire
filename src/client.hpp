@@ -123,8 +123,8 @@ public:
   std::string sub_bytes(std::string topic) {
     if(not pssoc)
       qlog_error("PUB/SUB socket is not connected.\n");
-    static Mem topicbuf(256);
-    static std::string last_topic("");
+    thread_local Mem topicbuf(256);
+    thread_local std::string last_topic("");
     if(last_topic != "")
       ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_UNSUBSCRIBE, last_topic.c_str(), last_topic.size()));
     last_topic = topic;
@@ -156,7 +156,7 @@ public:
    * Should be called after closing an episode
    */
   void update_counter() {
-    static qlib::Timer timer;
+    thread_local qlib::Timer timer;
     if(not rrsoc)
       qlog_error("REQ/REP socket is not connected.\n");
     timer.start();
