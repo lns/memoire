@@ -628,6 +628,7 @@ public:
       qlog_warning("%s() failed as local weight sum is %lf <= 0.\n", __func__, prt.get_weight_sum());
       return false;
     }
+    std::lock_guard<std::mutex> guard(prt_mutex);
     for(size_t i=0; i<cache_size; i++) {
       long idx;
       do {
@@ -663,6 +664,7 @@ public:
               s.next_qvest(this).ptr_,
               s.next_info(this).ptr_);
       }
+      assert(prt.get_weight(idx) > 0);
       s.entry_weight(this).as_array<float>()[0] = prt.get_weight(idx);
     }
     out_sum_weight = prt.get_weight_sum();
