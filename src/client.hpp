@@ -11,6 +11,10 @@ public:
   typedef typename RM::Message Message;
   typedef typename RM::DataCache Cache;
 
+  std::string sub_endpoint;
+  std::string req_endpoint;
+  std::string push_endpoint;
+
   qlib::LCG64 lcg64;
   RM * prm;
 
@@ -18,12 +22,6 @@ protected:
   // ZeroMQ socket is not thread-safe, so a socket should only
   // be used by a single thread at the same time.
   void * ctx;
-  void * rrsoc; // for sync_sizes()
-  void * ppsoc; // for push_cache()
-  void * lgsoc; // for write_log()
-  void * pssoc; // for sub_bytes()
-  Mem reqbuf, repbuf, pushbuf, subbuf, logbuf;
-  Message *req, *rep, *push, *sub, *log;
   Cache * cache_buf;
 
 public:
@@ -33,41 +31,16 @@ public:
    * endpoint can be set to nullptr or "" to disable this protocal
    */
   ReplayMemoryClient(
-      const char * sub_endpoint,
-      const char * req_endpoint,
-      const char * push_endpoint) : prm(nullptr), cache_buf(nullptr)
+      const std::string sub_ep,
+      const std::string req_ep,
+      const std::string push_ep)
+    : sub_endpoint(sub_ep),
+      req_endpoint(req_ep),
+      push_endpoint(push_ep),
+      prm(nullptr),
+      cache_buf(nullptr)
   {
     ctx = zmq_ctx_new(); qassert(ctx);
-    if(sub_endpoint and 0!=strcmp(sub_endpoint, "")) {
-      pssoc = zmq_socket(ctx, ZMQ_SUB); qassert(pssoc);
-      ZMQ_CALL(zmq_connect(pssoc, sub_endpoint));
-    }
-    if(req_endpoint and 0!=strcmp(req_endpoint, "")) {
-      rrsoc = zmq_socket(ctx, ZMQ_REQ); qassert(rrsoc);
-      ZMQ_CALL(zmq_connect(rrsoc, req_endpoint));
-    }
-    if(push_endpoint and 0!=strcmp(push_endpoint, "")) {
-      ppsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(ppsoc);
-      // Reduce memory usage by limiting length of outgoing message queue.
-      int snd_hwm = 2;
-      ZMQ_CALL(zmq_setsockopt(ppsoc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
-      ZMQ_CALL(zmq_connect(ppsoc, push_endpoint));  
-      lgsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(lgsoc);
-      ZMQ_CALL(zmq_connect(lgsoc, push_endpoint));  
-    }
-    // Make bufs
-    subbuf.resize(256); // TODO
-    sub  = reinterpret_cast<Message*>(subbuf.data());
-    reqbuf.resize(RM::reqbuf_size());
-    req  = reinterpret_cast<Message*>(reqbuf.data());
-    repbuf.resize(RM::repbuf_size());
-    rep  = reinterpret_cast<Message*>(repbuf.data());
-    pushbuf.resize(RM::pushbuf_size());
-    push = reinterpret_cast<Message*>(pushbuf.data());
-    logbuf.resize(RM::pushbuf_size());
-    log  = reinterpret_cast<Message*>(logbuf.data());
-    // Empty RM
-    prm = nullptr; //new RM{0,0,0,0,0,0,0,0,&lcg64};
   }
 
   ~ReplayMemoryClient() {
@@ -75,10 +48,6 @@ public:
       delete prm;
     if(cache_buf)
       free(cache_buf);
-    zmq_close(rrsoc);
-    zmq_close(ppsoc);
-    zmq_close(pssoc);
-    zmq_close(lgsoc);
     zmq_ctx_destroy(ctx);
   }
 
@@ -91,16 +60,28 @@ public:
       free(cache_buf);
       cache_buf = nullptr;
     }
-    if(not rrsoc)
-      qlog_error("REQ/REP socket is not connected.\n");
+    thread_local void * soc = nullptr;
+    thread_local Mem reqbuf;
+    thread_local Mem repbuf;
+    THREAD_LOCAL_TIMER;
+    if(not soc) {
+      qassert(soc = zmq_socket(ctx, ZMQ_REQ));
+      ZMQ_CALL(zmq_connect(soc, req_endpoint.c_str()));
+      reqbuf.resize(RM::reqbuf_size());
+      repbuf.resize(RM::repbuf_size());
+    }
+    Message * req = reinterpret_cast<Message*>(reqbuf.data());
+    Message * rep = reinterpret_cast<Message*>(repbuf.data());
     req->type = Message::ProtocalSizes;
     req->sender = 0;
-    ZMQ_CALL(zmq_send(rrsoc, reqbuf.data(), reqbuf.size(), 0));
-    ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
+    START_TIMER();
+    ZMQ_CALL(zmq_send(soc, reqbuf.data(), reqbuf.size(), 0));
+    ZMQ_CALL(zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
+    STOP_TIMER();
+    PRINT_TIMER_STATS(100);
     qassert(rep->type == req->type);
     // Get sizes
-    Message * rets = reinterpret_cast<Message*>(repbuf.data());
-    auto vw = ArrayView<BufView::Data>(&rets->payload, N_VIEW);
+    auto vw = ArrayView<BufView::Data>(&rep->payload, N_VIEW);
     RM * p = reinterpret_cast<RM*>((char*)vw.data() + vw.nbytes());
     BufView view[N_VIEW];
     for(int i=0; i<N_VIEW; i++)
@@ -124,28 +105,41 @@ public:
    * Blocked Receive of Bytestring
    */
   std::string sub_bytes(std::string topic) {
-    if(not pssoc)
-      qlog_error("PUB/SUB socket is not connected.\n");
-    thread_local Mem topicbuf(256);
+    thread_local void * soc = nullptr;
+    thread_local Mem tpcbuf;
+    thread_local Mem subbuf;
     thread_local std::string last_topic("");
+    THREAD_LOCAL_TIMER;
+    if(not soc) {
+      qassert(soc = zmq_socket(ctx, ZMQ_SUB));
+      ZMQ_CALL(zmq_connect(soc, sub_endpoint.c_str()));
+      tpcbuf.resize(256);
+      subbuf.resize(256);
+    }
+    if(topic.size() >= tpcbuf.size())
+      qlog_error("topic: '%s' is too long.\n", topic.c_str());
     if(last_topic != "")
-      ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_UNSUBSCRIBE, last_topic.c_str(), last_topic.size()));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_UNSUBSCRIBE, last_topic.c_str(), last_topic.size()));
     last_topic = topic;
     if(topic != "")
-      ZMQ_CALL(zmq_setsockopt(pssoc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
     int size;
     while(true) {
-      memset(topicbuf.data(), 0, topicbuf.size());
+      memset(tpcbuf.data(), 0, tpcbuf.size());
       memset(subbuf.data(), 0, subbuf.size());
+      START_TIMER();
       // Recv topic
-      ZMQ_CALL(size = zmq_recv(pssoc, topicbuf.data(), topicbuf.size(), 0)); qassert(size <= (int)topicbuf.size());
+      ZMQ_CALL(size = zmq_recv(soc, tpcbuf.data(), tpcbuf.size(), 0)); qassert(size <= (int)tpcbuf.size());
       // Recv Message
-      ZMQ_CALL(size = zmq_recv(pssoc, subbuf.data(), subbuf.size(), 0));
-      if(strcmp((const char*)topicbuf.data(), topic.data())) { // topic mismatch
-        qlog_warning("topic mismatch: '%s' != '%s'\n", (const char *)topicbuf.data(), topic.c_str());
-        continue;
+      ZMQ_CALL(size = zmq_recv(soc, subbuf.data(), subbuf.size(), 0));
+      STOP_TIMER();
+      PRINT_TIMER_STATS(100);
+      // Check topic
+      if(strcmp((const char*)tpcbuf.data(), topic.data())) { // topic mismatch, this should not happen
+        qlog_error("topic mismatch: '%s' != '%s'\n", (const char *)tpcbuf.data(), topic.c_str());
       }
-      if(not (size <= (int)subbuf.size())) {
+      // Check msg size
+      if(not (size <= (int)subbuf.size())) { // resize and wait for next
         subbuf.resize(size);
         qlog_warning("Resize subbuf to %lu\n", subbuf.size());
         continue;
@@ -159,21 +153,25 @@ public:
    * Should be called after closing an episode
    */
   void update_counter() {
-    thread_local qlib::Timer timer;
-    if(not rrsoc)
-      qlog_error("REQ/REP socket is not connected.\n");
-    timer.start();
-    req->type = Message::ProtocalCounter;
-    req->sender = prm->uuid;
-    int * p_length = reinterpret_cast<int *>(&req->payload);
+    thread_local void * soc = nullptr;
+    thread_local Mem pushbuf;
+    THREAD_LOCAL_TIMER;
+    if(not soc) {
+      qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
+      ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
+      pushbuf.resize(RM::pushbuf_size());
+    }
+    Message * push = reinterpret_cast<Message*>(pushbuf.data());
+    push->type = Message::ProtocalCounter;
+    push->length = sizeof(int);
+    push->sender = prm->uuid;
+    push->sum_weight = 0.0;
+    int * p_length = reinterpret_cast<int *>(&push->payload);
     *p_length = prm->new_length;
-    //qlog_info("%s(): length: %d\n",__func__, *p_length);
-    ZMQ_CALL(zmq_send(rrsoc, reqbuf.data(), reqbuf.size(), 0));
-    ZMQ_CALL(zmq_recv(rrsoc, repbuf.data(), repbuf.size(), 0));
-    timer.stop();
-    if(timer.cnt() % 100 == 0)
-      qlog_info("%s(): n: %lu, min: %f , avg: %f, max: %f (msec)\n",
-          __func__, timer.cnt(), timer.min(), timer.avg(), timer.max());
+    START_TIMER();
+    ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
+    STOP_TIMER();
+    PRINT_TIMER_STATS(100);
   }
 
   /**
@@ -181,18 +179,28 @@ public:
    * return 0 iff success
    */
   int push_cache() {
-    if(not ppsoc)
-      qlog_error("PUSH/PULL socket is not connected.\n");
+    thread_local void * soc = nullptr;
+    thread_local Mem pushbuf;
+    THREAD_LOCAL_TIMER;
+    if(not soc) {
+      qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
+      int snd_hwm = 2;
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
+      ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
+      pushbuf.resize(RM::pushbuf_size());
+    }
+    Message * push = reinterpret_cast<Message*>(pushbuf.data());
     bool ret = prm->get_cache(cache_buf, push->sum_weight);
     if(not ret) // failed
       return -1;
-    //cache_buf->get(prm->cache_size-1, prm).print_first(prm); // DEBUG
     push->type = Message::ProtocalCache;
     push->length = Cache::nbytes(prm);
     push->sender = prm->uuid;
-    //qlog_info("%s(): cache_size: %d, cache::nbytes: %lu\n", __func__, prm->cache_size, Cache::nbytes(prm));
-    ZMQ_CALL(zmq_send(ppsoc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
-    ZMQ_CALL(zmq_send(ppsoc, cache_buf, push->length, 0));
+    START_TIMER();
+    ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(soc, cache_buf, push->length, 0));
+    STOP_TIMER();
+    PRINT_TIMER_STATS(100);
     return 0;
   }
 
@@ -200,14 +208,24 @@ public:
    * Write a log to server
    */
   void write_log(const std::string& msg) {
-    if(not lgsoc)
-      qlog_error("PUSH/PULL (log) socket is not connected.\n");
-    log->type = Message::ProtocalLog;
-    log->length = (int)msg.size();
-    log->sender = prm->uuid;
-    log->sum_weight = 0.0;
-    ZMQ_CALL(zmq_send(lgsoc, logbuf.data(), logbuf.size(), ZMQ_SNDMORE));
-    ZMQ_CALL(zmq_send(lgsoc, msg.data(), log->length, 0));
+    thread_local void * soc = nullptr;
+    thread_local Mem pushbuf;
+    THREAD_LOCAL_TIMER;
+    if(not soc) {
+      qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
+      ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
+      pushbuf.resize(RM::pushbuf_size());
+    }
+    Message * push = reinterpret_cast<Message*>(pushbuf.data());
+    push->type = Message::ProtocalLog;
+    push->length = (int)msg.size();
+    push->sender = prm->uuid;
+    push->sum_weight = 0.0;
+    START_TIMER();
+    ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(soc, msg.data(), push->length, 0));
+    STOP_TIMER();
+    PRINT_TIMER_STATS(100);
   }
 
 };

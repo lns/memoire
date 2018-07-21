@@ -17,7 +17,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire v2, ver 18.07.16, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire v2, ver 18.07.21, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -153,7 +153,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     ;
 
   py::class_<RMC>(m, "ReplayMemoryClient")
-    .def(py::init<const char*, const char*, const char*>(),
+    .def(py::init<const std::string&, const std::string&, const std::string&>(),
         "sub_endpoint"_a, "req_endpoint"_a, "push_endpoint"_a)
     .def_readonly("rem", &RMC::prm)
     .def("sync_sizes",     &RMC::sync_sizes,     py::call_guard<py::gil_scoped_release>())

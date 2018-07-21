@@ -46,3 +46,19 @@ int64_t check_multipart(void * soc) {
   return more;
 }
 
+#ifdef TIME_CONNECTION
+#define THREAD_LOCAL_TIMER thread_local qlib::Timer timer
+#define START_TIMER() timer.start()
+#define STOP_TIMER() timer.stop()
+#define PRINT_TIMER_STATS(N) if(timer.cnt() % N == 0) { \
+  qlog_info("%s(): n: %lu, min: %f, avg: %f, max: %f (msec)\n", \
+      __func__, timer.cnt(), timer.min(), timer.avg(), timer.max()); \
+  timer.clear(); \
+} while(0)
+#else
+#define THREAD_LOCAL_TIMER
+#define START_TIMER()
+#define STOP_TIMER()
+#define PRINT_TIMER_STATS(N)
+#endif
+

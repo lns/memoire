@@ -15,8 +15,8 @@ public:
   typedef typename RM::DataCache Cache;
 
   RM rem;
+  std::string pub_endpoint;
   void * ctx;
-  void * pssoc;                      ///< PUB/SUB socket
 
   Vector<Cache> * caches;            ///< caches of data collected from actors
   PrtTree cache_prt;                 ///< PrtTree for sampling
@@ -33,18 +33,14 @@ public:
   FILE * logfile;                    ///< logfile object
   std::mutex logfile_mutex;
 
-  ReplayMemoryServer(const BufView * vw, size_t max_step, qlib::RNG * prt_rng, const char* pub_endpoint, int n_caches)
-    : rem{vw, max_step, prt_rng}, ctx{nullptr}, caches{nullptr}, cache_prt{prt_rng, n_caches},
-    total_caches{0}, total_episodes{0}, total_steps{0}, logfile{nullptr}
+  ReplayMemoryServer(const BufView * vw, size_t max_step, qlib::RNG * prt_rng, const std::string& pub_ep, int n_caches)
+    : rem{vw, max_step, prt_rng}, pub_endpoint{pub_ep},
+      ctx{nullptr}, caches{nullptr}, cache_prt{prt_rng, n_caches},
+      total_caches{0}, total_episodes{0}, total_steps{0}, logfile{nullptr}
   {
     ctx = zmq_ctx_new(); qassert(ctx);
     sample_index.resize(n_caches, 0);
     cache_index = 0;
-    // PUB endpoint
-    if(pub_endpoint and strcmp(pub_endpoint, "")) {
-      pssoc = zmq_socket(ctx, ZMQ_PUB); qassert(pssoc);
-      ZMQ_CALL(zmq_bind(pssoc, pub_endpoint));
-    }
   }
 
   ~ReplayMemoryServer() {
@@ -52,7 +48,6 @@ public:
       delete caches;
     if(logfile)
       fclose(logfile);
-    zmq_close(pssoc);
     zmq_ctx_destroy(ctx);
   }
 
@@ -79,17 +74,17 @@ public:
    * Publish a byte string to clients
    */
   void pub_bytes(const std::string& topic, const std::string& message) {
-    thread_local qlib::Timer timer;
-    if(not pssoc)
-      qlog_error("PUB/SUB socket is not opened.\n");
-    //qlog_info("Send topic: %s\n", topic.c_str());
-    timer.start();
-    ZMQ_CALL(zmq_send(pssoc, topic.data(), topic.size(), ZMQ_SNDMORE));
-    ZMQ_CALL(zmq_send(pssoc, message.data(), message.size(), 0));
-    timer.stop();
-    if(timer.cnt() % 100 == 0)
-      qlog_info("%s(): n: %lu, min: %f, avg: %f, max: %f (msec)\n",
-          __func__, timer.cnt(), timer.min(), timer.avg(), timer.max());
+    thread_local void * soc = nullptr;
+    THREAD_LOCAL_TIMER;
+    if(not soc) {
+      qassert(soc = zmq_socket(ctx, ZMQ_PUB));
+      ZMQ_CALL(zmq_bind(soc, pub_endpoint.c_str()));
+    }
+    START_TIMER();
+    ZMQ_CALL(zmq_send(soc, topic.data(), topic.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(soc, message.data(), message.size(), 0));
+    STOP_TIMER();
+    PRINT_TIMER_STATS(10);
   }
   
   /**
@@ -207,6 +202,7 @@ public:
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
+    THREAD_LOCAL_TIMER;
     Mem reqbuf(rem.reqbuf_size());
     Mem repbuf(rem.repbuf_size());
     Message * args = reinterpret_cast<Message*>(reqbuf.data());
@@ -225,18 +221,10 @@ public:
         // memcpy. Only primary objects are valid.
         memcpy(p, &rem, sizeof(RM));
         //qlog_info("REP: ProtocalSizes\n");
+        START_TIMER();
         ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
-      }
-      else if(args->type == Message::ProtocalCounter) {
-        // Update counters
-        if(true) {
-          std::lock_guard<std::mutex> guard(counter_mutex);
-          int * p_length = reinterpret_cast<int *>(&args->payload);
-          total_episodes += 1;
-          total_steps += *p_length;
-        }
-        //qlog_info("REP: ProtocalCounter: total_steps: %lu\n", total_steps);
-        ZMQ_CALL(zmq_send(soc, repbuf.data(), sizeof(Message), 0)); //
+        STOP_TIMER();
+        PRINT_TIMER_STATS(10);
       }
       else
         qthrow("Unknown args->type");
@@ -260,6 +248,7 @@ public:
       caches = new Vector<Cache>(Cache::nbytes(&rem));
       caches->resize(n_caches);
     }
+    THREAD_LOCAL_TIMER;
     Mem buf(rem.pushbuf_size());
     Message * args = reinterpret_cast<Message*>(buf.data());
     int size;
@@ -273,11 +262,12 @@ public:
     }
     std::string msg_buf;
     while(true) {
+      START_TIMER();
       ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size == (int)buf.size());
-      qassert(check_multipart(soc));
+      STOP_TIMER();
       if(args->type == Message::ProtocalCache) {
         qassert(args->length == (int)expected_size);
-        //qlog_info("PULL: ProtocalCache: idx: %d, sum_weight: %lf\n", idx, args->sum_weight);
+        qassert(check_multipart(soc));
         ZMQ_CALL(size = zmq_recv(soc, &(*caches)[idx], expected_size, 0));
         if(size != (int)expected_size) {
           qlog_warning("To be fixed: %d != %d\n", size, (int)expected_size);
@@ -294,9 +284,17 @@ public:
           cache_index = (cache_index + 1) % caches->size();
         }
       }
+      else if(args->type == Message::ProtocalCounter) {
+        // Update counters
+        std::lock_guard<std::mutex> guard(counter_mutex);
+        int * p_length = reinterpret_cast<int *>(&args->payload);
+        total_episodes += 1;
+        total_steps += *p_length;
+      }
       else if(args->type == Message::ProtocalLog) {
         if(args->length >= (int)msg_buf.size())
           msg_buf.resize(args->length + 1, '\0');
+        qassert(check_multipart(soc));
         ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], msg_buf.size(), 0));
         if(size != args->length) {
           qlog_warning("To be fixed: %d != %d, buf: %lu\n", size, args->length, msg_buf.size());
@@ -312,6 +310,7 @@ public:
       }
       else
         qthrow("Unknown args->type");
+      PRINT_TIMER_STATS(100);
     }
     // never
     zmq_close(soc);
@@ -343,8 +342,6 @@ public:
   void pull_proxy_main(const char * front_ep, const char * back_ep) {
     proxy_main(ZMQ_PULL, front_ep, ZMQ_PUSH, back_ep);
   }
-
-  // TODO: Proxy for PUB/SUB protocal
 
 };
 
