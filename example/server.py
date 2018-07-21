@@ -30,10 +30,12 @@ server.print_info()
 batch_size = 4
 
 threads = []
-threads.append(Thread(target=server.rep_worker_main, args=("tcp://*:5561", Bind)))
+threads.append(Thread(target=server.rep_proxy_main,  args=("tcp://*:5561", "inproc://rep_workers")))
+for i in range(2):
+  threads.append(Thread(target=server.rep_worker_main, args=("inproc://rep_workers", Conn)))
 threads.append(Thread(target=server.pull_proxy_main, args=("tcp://*:5562", "inproc://pull_workers")))
 for i in range(2): # NOTE: number of worker should be less than n_caches
-   threads.append(Thread(target=server.pull_worker_main, args=("inproc://pull_workers", Conn)))
+  threads.append(Thread(target=server.pull_worker_main, args=("inproc://pull_workers", Conn)))
 
 for th in threads:
   th.start()

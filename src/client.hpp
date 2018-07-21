@@ -48,6 +48,9 @@ public:
     }
     if(push_endpoint and 0!=strcmp(push_endpoint, "")) {
       ppsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(ppsoc);
+      // Reduce memory usage by limiting length of outgoing message queue.
+      int snd_hwm = 2;
+      ZMQ_CALL(zmq_setsockopt(ppsoc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
       ZMQ_CALL(zmq_connect(ppsoc, push_endpoint));  
       lgsoc = zmq_socket(ctx, ZMQ_PUSH); qassert(lgsoc);
       ZMQ_CALL(zmq_connect(lgsoc, push_endpoint));  

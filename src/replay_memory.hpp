@@ -628,7 +628,10 @@ public:
       qlog_warning("%s() failed as local weight sum is %lf <= 0.\n", __func__, prt.get_weight_sum());
       return false;
     }
+#ifndef LOCKFREE_GET_CACHE
+    // Use global lock to get a snapshot of current PrtTree
     std::lock_guard<std::mutex> guard(prt_mutex);
+#endif
     for(size_t i=0; i<cache_size; i++) {
       long idx;
       do {
@@ -664,8 +667,17 @@ public:
               s.next_qvest(this).ptr_,
               s.next_info(this).ptr_);
       }
-      assert(prt.get_weight(idx) > 0);
-      s.entry_weight(this).as_array<float>()[0] = prt.get_weight(idx);
+      float w = prt.get_weight(idx);
+#ifdef LOCKFREE_GET_CACHE
+      // Lock free version, may get old data or new data.
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if(w <= 0) { // redo
+        i--;
+        continue;
+      }
+#endif
+      assert(w > 0);
+      s.entry_weight(this).as_array<float>()[0] = w;
     }
     out_sum_weight = prt.get_weight_sum();
     return true;

@@ -295,9 +295,6 @@ public:
         }
       }
       else if(args->type == Message::ProtocalLog) {
-#if 1
-        ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], 0, 0));
-#else
         if(args->length >= (int)msg_buf.size())
           msg_buf.resize(args->length + 1, '\0');
         ZMQ_CALL(size = zmq_recv(soc, &msg_buf[0], msg_buf.size(), 0));
@@ -312,7 +309,6 @@ public:
           fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), args->sender, msg_buf.data());
           fflush(logfile);
         }
-#endif
       }
       else
         qthrow("Unknown args->type");
