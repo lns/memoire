@@ -158,6 +158,8 @@ public:
     THREAD_LOCAL_TIMER;
     if(not soc) {
       qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
+      int snd_hwm = 16;
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(RM::pushbuf_size());
     }
@@ -213,6 +215,8 @@ public:
     THREAD_LOCAL_TIMER;
     if(not soc) {
       qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
+      int snd_hwm = 16;
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(RM::pushbuf_size());
     }
