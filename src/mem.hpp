@@ -2,7 +2,6 @@
 
 #include <cstdlib>
 #include <cstring>    // memcpy
-#include <new>        // placement new
 #include <algorithm>  // swap
 #include <cassert>
 
@@ -22,11 +21,11 @@ public:
 
   ~Mem() {
     if(ptr_)
-      std::free(ptr_);
+      free(ptr_);
   }
 
   void resize(size_t len) {
-    ptr_ = std::realloc(ptr_, len);
+    ptr_ = realloc(ptr_, len);
     len_ = len;
     assert(len==0 or ptr_!=nullptr);
   }
@@ -38,7 +37,8 @@ public:
 
   // move
   Mem(Mem&& m) : ptr_{m.ptr_}, len_{m.len_} {
-    new(&m) Mem();
+    m.ptr_ = nullptr;
+    m.len_ = 0;
   }
 
   // copy assign
@@ -50,9 +50,12 @@ public:
 
   // move assign
   Mem& operator=(Mem&& m) {
+    if(ptr_)
+      free(ptr_);
     ptr_ = m.ptr_;
     len_ = m.len_;
-    new(&m) Mem();
+    m.ptr_ = nullptr;
+    m.len_ = 0;
     return *this;
   }
 
