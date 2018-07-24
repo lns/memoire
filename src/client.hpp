@@ -111,6 +111,8 @@ public:
     THREAD_LOCAL_TIMER;
     if(not soc) {
       qassert(soc = zmq_socket(ctx, ZMQ_SUB));
+      int rcv_hwm = 4;
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &rcv_hwm, sizeof(rcv_hwm)));
       ZMQ_CALL(zmq_connect(soc, sub_endpoint.c_str()));
       tpcbuf.resize(256);
       subbuf.resize(256);
