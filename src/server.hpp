@@ -142,7 +142,7 @@ public:
         std::lock_guard<std::mutex> guard(cache_mutex);
         c_idx = cache_prt.sample_index();
         s_idx = sample_index[c_idx];
-        if(s_idx >= rem.cache_size) {
+        if(s_idx >= (int)rem.cache_size) {
           if(rem.reuse_cache) {
             s_idx = sample_index[c_idx] = 0;
           } else {

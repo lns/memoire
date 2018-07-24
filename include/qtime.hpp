@@ -77,7 +77,12 @@ public:
 		return diff;
 	}
 
-	inline void clear() { new(this) CycleTimer(); }
+	inline void clear() {
+    n = 0;
+    min_cyc = std::numeric_limits<double>::max();
+    sum_cyc = 0;
+    max_cyc = 0;
+  }
 	inline double min() const { return min_cyc; }
 	inline double avg() const { return sum_cyc/n; }
 	inline double max() const { return max_cyc; }	
@@ -116,7 +121,12 @@ public:
 		return msec;
 	}
 
-	inline void clear() { new(this) Timer(); }
+	inline void clear() {
+    n = 0;
+    min_elapsed = std::numeric_limits<double>::max();
+    sum_elapsed = 0;
+    max_elapsed = 0;
+  }
 	inline double min() const { return min_elapsed; }
 	inline double avg() const { return sum_elapsed/n; }
 	inline double max() const { return max_elapsed; }	

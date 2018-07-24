@@ -3,7 +3,6 @@
 #include "utils.hpp"
 #include "replay_memory.hpp"
 #include "qlog.hpp"
-#include <future>
 
 template<class RM>
 class ReplayMemoryClient : public non_copyable {
