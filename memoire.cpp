@@ -161,8 +161,11 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("push_cache",     &RMC::push_cache,     py::call_guard<py::gil_scoped_release>())
     .def("write_log",      &RMC::write_log,      py::call_guard<py::gil_scoped_release>())
     .def("sub_bytes", [](RMC& rmc, std::string topic) {
-        py::gil_scoped_release release;
-        std::string ret = rmc.sub_bytes(topic);
+        std::string ret;
+        if(true) {
+          py::gil_scoped_release release;
+          ret = rmc.sub_bytes(topic);
+        }
         return py::bytes(ret);
       }, "topic"_a)
     ;
@@ -205,7 +208,6 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("pub_bytes",        &RMS::pub_bytes,        py::call_guard<py::gil_scoped_release>())
     .def("get_batch", [](RMS& s,
           size_t batch_size) {
-        //py::gil_scoped_release release; // Why can't I release the GIL here?
         std::vector<BV> ret = s.get_batch_view(batch_size);
         std::vector<py::array> prev;
         std::vector<py::array> next;
