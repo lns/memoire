@@ -319,6 +319,7 @@ protected:
   std::queue<Episode> episode;       ///< Episodes
   PrtTree prt;                       ///< Priority tree for sampling
   std::mutex prt_mutex;              ///< mutex for priority tree
+  int stage;                         ///< init -> 0 -> new -> 10 -> close -> 0
 public:
   qlib::RNG * rng;                   ///< Random Number Generator
 
@@ -362,6 +363,7 @@ public:
       each = 1.0f;
     for(auto&& each : cache_flags)
       each = 1;
+    stage = 0;
   }
 
   void check() const {
@@ -538,8 +540,11 @@ public:
    * Prepare for a new episode
    */
   void new_episode() {
+    if(stage == 10)
+      qlog_warning("Renew an existing episode. Possible loss of data.\n");
     new_offset = get_offset_for_new();
     new_length = 0;
+    stage = 10;
   }
 
   /**
@@ -547,6 +552,7 @@ public:
    */
   void close_episode(bool do_update_value = true, bool do_update_weight = true)
   {
+    qassert(stage == 10);
     qassert(new_length <= get_length_for_new());
     episode.emplace(new_offset, new_length);
     if(do_update_value)
@@ -558,6 +564,7 @@ public:
     }
     while(max_episode > 0 and episode.size() > max_episode)
       remove_oldest();
+    stage = 0;
   }
 
   /**
@@ -580,6 +587,7 @@ public:
       const void * p_i,
       float weight)
   {
+    qassert(stage == 10);
     if(!episode.empty() and new_offset != get_offset_for_new())
       qthrow("Please call new_episode() before add_entry().");
     // Check space
@@ -587,11 +595,13 @@ public:
       //qlog_info("new_length: %ld, get_length_for_new: %ld\n", new_length, get_length_for_new());
       remove_oldest();
     }
+    qassert(new_length < get_length_for_new());
     long idx = (new_offset + new_length) % max_step;
     auto& entry = data[idx];
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v, nullptr, p_i);
     prt.set_weight_without_update(idx, weight); // will be update by update_weight() later in close_episode()
     new_length += 1;
+    qassert(new_length <= get_length_for_new());
   }
 
   void add_entry(
