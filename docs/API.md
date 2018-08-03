@@ -206,9 +206,11 @@ class ReplayMemoryClient
 
     This function call will construct a ReplayMemory, with sizes synchronized from the remote ReplayMemoryServer.
 
-    :param  sub_endpoint: endpoint for PUB/SUB protocal
-    :param  req_endpoint: endpoint for REP/REQ protocal
-    :param  push_endpoint: endpoint for PUSH/PULL protocal """
+    :param  sub_endpoint:  endpoint for PUB/SUB protocal
+    :param  req_endpoint:  endpoint for REP/REQ protocal
+    :param  push_endpoint: endpoint for PUSH/PULL protocal
+    :param  input_uuid:    this can be used to specify actor IP address. 0 for random.
+                           See examples/client_mt.py for an example."""
     pass
 
   def sync_sizes(self, max_step):

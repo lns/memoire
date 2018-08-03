@@ -22,6 +22,7 @@ protected:
   // be used by a single thread at the same time.
   void * ctx;
   Cache * cache_buf;
+  uint32_t input_uuid;
 
 public:
   /**
@@ -32,12 +33,14 @@ public:
   ReplayMemoryClient(
       const std::string sub_ep,
       const std::string req_ep,
-      const std::string push_ep)
+      const std::string push_ep,
+      uint32_t rem_input_uuid = 0)
     : sub_endpoint(sub_ep),
       req_endpoint(req_ep),
       push_endpoint(push_ep),
       prm(nullptr),
-      cache_buf(nullptr)
+      cache_buf(nullptr),
+      input_uuid(rem_input_uuid)
   {
     ctx = zmq_ctx_new(); qassert(ctx);
   }
@@ -85,7 +88,7 @@ public:
     BufView view[N_VIEW];
     for(int i=0; i<N_VIEW; i++)
       vw[i].to(view[i]);
-    prm = new RM{view, max_step, &lcg64};
+    prm = new RM{view, max_step, &lcg64, input_uuid};
     // Sync parameters
     prm->priority_exponent = p->priority_exponent;
     prm->mix_lambda  = p->mix_lambda;
@@ -159,7 +162,7 @@ public:
     THREAD_LOCAL_TIMER;
     if(not soc) {
       qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
-      int snd_hwm = 16;
+      int snd_hwm = 64;
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(RM::pushbuf_size());
@@ -216,7 +219,7 @@ public:
     THREAD_LOCAL_TIMER;
     if(not soc) {
       qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
-      int snd_hwm = 16;
+      int snd_hwm = 64;
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(RM::pushbuf_size());

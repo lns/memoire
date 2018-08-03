@@ -7,6 +7,7 @@
 #include <functional>
 #include "replay_memory.hpp"
 #include "hexdump.hpp"
+#include <arpa/inet.h>
 
 template<class RM>
 class ReplayMemoryServer : public non_copyable {
@@ -302,9 +303,13 @@ public:
         }
         qassert(size == args->length);
         msg_buf[size] = '\0';
+        // Convert args->sender to IP address
+        struct in_addr ip_addr;
+        ip_addr.s_addr = args->sender;
+        char * sender_ip = inet_ntoa(ip_addr);
         if(logfile) {
           std::lock_guard<std::mutex> guard(logfile_mutex);
-          fprintf(logfile, "%s,%08x,%s\n", qlib::timestr().c_str(), args->sender, msg_buf.data());
+          fprintf(logfile, "%s,%s,%s\n", qlib::timestr().c_str(), sender_ip, msg_buf.data());
           fflush(logfile);
         }
       }

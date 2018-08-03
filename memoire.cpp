@@ -44,7 +44,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
           return AS_BV(b);
           }), "buffer"_a)
     .def("__str__", &BV::str)
-    .def("as_array", [](BV& self){
+    .def("as_array", [](BV& self) {
         return py::array(py::dtype(self.format_), self.shape_, self.stride_, self.ptr_);
       })
     ;
@@ -154,8 +154,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     ;
 
   py::class_<RMC>(m, "ReplayMemoryClient")
-    .def(py::init<const std::string&, const std::string&, const std::string&>(),
-        "sub_endpoint"_a, "req_endpoint"_a, "push_endpoint"_a)
+    .def(py::init<const std::string&, const std::string&, const std::string&, uint32_t>(),
+        "sub_endpoint"_a, "req_endpoint"_a, "push_endpoint"_a, "input_uuid"_a=0)
     .def_readonly("rem", &RMC::prm)
     .def("sync_sizes",     &RMC::sync_sizes,     py::call_guard<py::gil_scoped_release>())
     .def("update_counter", &RMC::update_counter, py::call_guard<py::gil_scoped_release>())

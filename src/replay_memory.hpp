@@ -329,12 +329,14 @@ public:
 public:
   /**
    * Construct a new replay memory
-   * @param e_size   size of a single entry (in bytes)
-   * @param max_epi  max number of episodes kept in the memory
+   * @param e_size       size of a single entry (in bytes)
+   * @param max_epi      max number of episodes kept in the memory
+   * @param input_uuid   specified uuid, usually used for recording actor ip address
    */
   ReplayMemory(const BufView * vw,
       size_t m_step,
-      qlib::RNG * prt_rng) :
+      qlib::RNG * prt_rng,
+      uint32_t input_uuid = 0) :
     view{
       BufView(nullptr, vw[0].itemsize_, vw[0].format_, vw[0].shape_, vw[0].stride_),
       BufView(nullptr, vw[1].itemsize_, vw[1].format_, vw[1].shape_, vw[1].stride_),
@@ -356,7 +358,10 @@ public:
   {
     check();
     data.reserve(max_step);
-    uuid = qlib::get_nsec();
+    if(0!=input_uuid)
+      uuid = input_uuid;
+    else
+      uuid = qlib::get_nsec();
     for(auto&& each : discount_factor)
       each = 1.0f;
     for(auto&& each : reward_coeff)
