@@ -21,18 +21,18 @@ class ReplayMemory:
   qvest_buf     # buffer template for qvest, must have dtype = float32 and the same shape as reward_buf
   info_buf      # buffer template for info
   entry_size    # byte size of (s,a,r,p,v,q,i)
-  max_step      # max number of sample can be stored in this ReplayMemory
+  max_step      # max number of samples can be stored in this ReplayMemory
   uuid          # universally unique identifier for this instance
 
   # Read write properties
-  priority_exponent   # \beta: the coefficient for prioritized sampling 
+  priority_exponent   # \beta: the exponent coefficient for prioritized sampling 
   mix_lambda          # \lambda: mixture coefficient for computing multi-step return
   frame_stack         # number of frames stacked for each state (default 1)
   multi_step          # number of steps between prev and next (default 1)
   cache_size          # number of samples in a cache
   max_episode         # max number of episodes allowed in this ReplayMemory
   reuse_cache         # whether to discard used cache or to reuse them
-  discount_factor     # \gamma: the (multidimensional) discount factor used for cumulate reward
+  discount_factor     # \gamma: the (multidimensional) discount factor used for cumulating reward
   reward_coeff        # mixture coefficient for multi-dimensional reward
   cache_flags         # whether previous (s,a,r,p,v,q,i) and next (s,a,r,p,v,q,i) should be cached in caches
 ```
@@ -41,7 +41,7 @@ The `ReplayMemory` supports the following methods as
 class ReplayMemory:
 
   def __init__(self, state_buf, action_buf, reward_buf, prob_buf, value_buf, qvest_buf, info_buf, max_step):
-    """ Constructe a ReplayMemory with these properties """
+    """ Construct a ReplayMemory with these properties """
     pass
 
   def print_info(self):
@@ -67,21 +67,29 @@ class ReplayMemory:
     in previously opened episode, if the previous episode is not closed by a call of `close_episode()`. """
     pass
 
-  def close_episode(self):
+  def close_episode(self, episodic_weight_multiplier=1.0, do_update_value=True, do_update_weight=True):
     """ Close previously opened episode
 
     This API will close the episode opened previously by a call of `new_episode()`.
     The samples added to this episode by `add_entry()` will be saved and post-processed to compute
     multi-step return R_t and priority weight w_t for sampling.
     The behaviour of closing a closed episode is undefined and should be avoided.
-    The number of `num_episode()` will increase by 1 after calling this method. """
+    The number of `num_episode()` will increase by 1 after calling this method.
+
+    :param  episodic_weight_multiplier   Episodic weight multiplier. This will scale the sampling weight for
+                                         all samples in an episode.
+    :param  do_update_value              Whether we should update q-value estimation value (qvest) for samples
+                                         in this episode.
+    :param  do_update_weight             Whether we should update the prioritized sampling weight for samples
+                                         in this episode.
+    """
     pass
 
   def add_entry(self, s, a, r, p, v, i, init_w):
     """ Add an entry to currently opened episode
 
     This API will add an entry (s,a,r,p,v,i) to current opened episode.
-    The behaviour of adding entries to a closed episode is undefined and should be avoided.
+    The behaviour of adding entries to a closed episode is undefined.
     The number of `num_episode()` may decrease by 1 if space is insufficient.
 
     :param  s: state   (should match state_buf)
@@ -141,7 +149,9 @@ class ReplayMemoryServer
   def pull_worker_main(self, endpoint, mode):
     """ Mainloop for a PULL worker 
 
-    a PULL worker is responsible for receiving caches from clients.
+    a PULL worker is responsible for receiving caches from clients. (See `push_cache()` for the definition of cache).
+    The server stores recent caches received from multiple clients in a FIFO queue. The length of queue is
+    configurable with `n_caches`.
 
     :param  endpoint:  endpoint as in zeromq format
     :param  mode:      'Bind' for binding the endpoint to a port, or 'Conn' for connecting to the endpoint """
@@ -164,8 +174,11 @@ class ReplayMemoryServer
   def get_batch(self, batch_size):
     """ Get a batch from the distributed replay memory
 
-    This call can be used to prepare a batch of samples for the neural network learner.
-    We define a transition as the pair of a previous states (s,a,r,p,v,q,i) and the next state (s,a,r,p,v,q,i).
+    This call can be used to prepare a batch of samples for the neural network learner. The samples are sampled
+    without replacement (if `reuse_cache` is set to False) from caches stored in server's cache queue.
+    We define a transition as the pair of previous stacked states {(s,a,r,p,v,q,i)} and the next state (s,a,r,p,v,q,i).
+    The length of stacked states is configurable with `frame_stack`, while the number of steps between the latest
+    state in previous stacked states and the next state is configured by `multi_step`.
     The `get_batch()` call will return a batch of transitions, as well as their prioritized weight of sampling.
     Please see our vignette for the details of prioritized sampling. 
 
@@ -219,7 +232,12 @@ class ReplayMemoryClient
   def push_cache(self):
     """ Construct and push a cache to the server. Should be called periodically.
 
-    The function returns 0 on cache sent successfully, or -1 on failure.
+    A cache is a batch of transitions sampled (with replacement) from the client's local replay memory.
+    The sampling weight is proportional to the prioritized weight calculated in `close_episode()`.
+    The size of cache (how number samples in a cahce) is configured by `cache_size`.
+
+    This function may fail when there is no samples with positive sampling weight in local replay memory.
+    It returns 0 on cache sent successfully, or -1 on failure.
 
     :rtype: int """
     pass
