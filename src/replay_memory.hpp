@@ -510,7 +510,7 @@ protected:
   /**
    * Update weight in an episode.
    */
-  void update_weight(const Episode& epi) {
+  void update_weight(const Episode& epi, float episodic_weight_multiplier = 1.0) {
     assert(reward_buf().size() != 0);
     assert(value_buf().size() != 0);
     assert(qvest_buf().size() != 0);
@@ -530,7 +530,7 @@ protected:
       float priority = 0;
       for(int i=0; i<(int)prev_qvest.size(); i++)
         priority += reward_coeff[i] * fabs(prev_qvest[i] - prev_value[i]);
-      priority = pow(priority, priority_exponent);
+      priority = pow(priority, priority_exponent) * episodic_weight_multiplier;
       prt.set_weight(idx, prt.get_weight(idx) * priority);
     }
   }
@@ -550,7 +550,7 @@ public:
   /**
    * Make filled entries as a new episode
    */
-  void close_episode(bool do_update_value = true, bool do_update_weight = true)
+  void close_episode(float episodic_weight_multiplier = 1.0, bool do_update_value = true, bool do_update_weight = true)
   {
     qassert(stage == 10);
     qassert(new_length <= get_length_for_new());
@@ -560,7 +560,7 @@ public:
     if(do_update_weight) {
       qassert(do_update_value);
       std::lock_guard<std::mutex> guard(prt_mutex);
-      update_weight(episode.back());
+      update_weight(episode.back(), episodic_weight_multiplier);
     }
     while(max_episode > 0 and episode.size() > max_episode)
       remove_oldest();

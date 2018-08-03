@@ -17,7 +17,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire v2, ver 18.07.21, built on %s.\n",__DATE__);
+  fprintf(stderr, " Memoire v2, ver 18.08.03, built on %s.\n",__DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -123,7 +123,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("print_info", [](RM& rem) { rem.print_info(); })
     .def("num_episode", &RM::num_episode)
     .def("new_episode", &RM::new_episode)
-    .def("close_episode", &RM::close_episode, "do_update_value"_a = true, "do_update_wieght"_a = true)
+    .def("close_episode", &RM::close_episode, "episodic_weight_multiplier"_a = 1.0,
+        "do_update_value"_a = true, "do_update_wieght"_a = true)
     .def("add_entry", [](RM& rem,
           py::buffer s,
           py::buffer a,
