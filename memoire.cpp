@@ -217,22 +217,20 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         for(int i=N_VIEW; i<2*N_VIEW; i++)
           next.emplace_back(py::dtype(ret[i].format_), ret[i].shape_, ret[i].stride_, nullptr);
         pyarr_float entry_weight_arr({batch_size,});
-        bool succ = s.get_batch(batch_size,
-          prev[0].mutable_data(),
-          prev[1].mutable_data(),
-          prev[2].mutable_data(),
-          prev[3].mutable_data(),
-          prev[4].mutable_data(),
-          prev[5].mutable_data(),
-          prev[6].mutable_data(),
-          next[0].mutable_data(),
-          next[1].mutable_data(),
-          next[2].mutable_data(),
-          next[3].mutable_data(),
-          next[4].mutable_data(),
-          next[5].mutable_data(),
-          next[6].mutable_data(),
-          entry_weight_arr.mutable_data());
+        void * ptr[2*N_VIEW] = {nullptr};
+        for(int i=0; i<N_VIEW; i++)
+          ptr[i] = (void*)prev[i].mutable_data();
+        for(int i=0; i<N_VIEW; i++)
+          ptr[i+N_VIEW] = (void*)next[i].mutable_data();
+        float * wptr = entry_weight_arr.mutable_data();
+        bool succ = false;
+        if(true) {
+          py::gil_scoped_release release;
+          succ = s.get_batch(batch_size,
+            ptr[ 0], ptr[ 1], ptr[ 2], ptr[ 3], ptr[ 4], ptr[ 5], ptr[ 6],
+            ptr[ 7], ptr[ 8], ptr[ 9], ptr[10], ptr[11], ptr[12], ptr[13],
+            wptr);
+        }
         if(not succ)
           throw std::runtime_error("get_batch() failed.");
         return std::make_tuple(prev,next,entry_weight_arr);
