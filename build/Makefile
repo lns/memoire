@@ -5,7 +5,7 @@ ENABLE_DEBUG=0
 PYBIND11_ROOT=$(HOME)/ext/pybind11
 
 CXX=g++
-CXXFLAGS=-std=c++11 -O2 -Wall -D_GLIBCXX_USE_CXX11_ABI=0
+CXXFLAGS=-std=c++11 -O3 -Wall
 
 ifeq ($(ENABLE_DEBUG),1)
 	BACKWARD_MACRO=-DBACKWARD_HAS_BFD=1 -g -DTIME_CONNECTION
@@ -15,12 +15,15 @@ else
 	BACKWARD_LD=
 endif
 
-PY27INC=-I$(PYBIND11_ROOT)/include `python2.7 -m pybind11 --includes`
-PY34INC=`python3.4 -m pybind11 --includes`
+# Default python interpreter
+PYINC=`python -m pybind11 --includes`
 
-PYINC=$(PY27INC)
+# Build for specific version
+#PY27INC=`python2.7 -m pybind11 --includes`
+#PY34INC=`python3.4 -m pybind11 --includes`
+#PYINC=$(PY27INC)
 
-INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include
+INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include -I$(PYBIND11_ROOT)/include 
 LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
 ALL=memoire.so
