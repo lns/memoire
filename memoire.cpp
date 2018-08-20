@@ -206,6 +206,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("pull_worker_main", &RMS::pull_worker_main, py::call_guard<py::gil_scoped_release>())
     .def("rep_proxy_main",   &RMS::rep_proxy_main,   py::call_guard<py::gil_scoped_release>())
     .def("pull_proxy_main",  &RMS::pull_proxy_main,  py::call_guard<py::gil_scoped_release>())
+    .def("pub_proxy_main",   &RMS::pub_proxy_main,   py::call_guard<py::gil_scoped_release>())
     .def("pub_bytes",        &RMS::pub_bytes,        py::call_guard<py::gil_scoped_release>())
     .def("get_batch", [](RMS& s,
           size_t batch_size) {

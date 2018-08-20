@@ -348,6 +348,10 @@ public:
     proxy_main(ZMQ_PULL, front_ep, ZMQ_PUSH, back_ep);
   }
 
+  void pub_proxy_main(const char * front_ep, const char * back_ep) {
+    proxy_main(ZMQ_XSUB, front_ep, ZMQ_XPUB, back_ep);
+  }
+
 };
 
 typedef ReplayMemoryServer<RM> RMS;
