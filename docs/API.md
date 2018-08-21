@@ -33,6 +33,7 @@ class ReplayMemory:
   max_episode         # max number of episodes allowed in this ReplayMemory
   reuse_cache         # whether to discard used cache or to reuse them
   autosave_step       # number of steps for autosave current (unfinished) episode to the replay memory
+  replace_data        # whether to sample data to cache with/without replacement (default 1). Not compatiable with priority.
   discount_factor     # \gamma: the (multidimensional) discount factor used for cumulating reward
   reward_coeff        # mixture coefficient for multi-dimensional reward
   cache_flags         # whether previous (s,a,r,p,v,q,i) and next (s,a,r,p,v,q,i) should be cached in caches

@@ -309,6 +309,7 @@ public:
   unsigned cache_size;               ///< Cache size, number of sample in a cache
   int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
   int autosave_step;                 ///< number of step for auto save (default 0 for no autosave)
+  int replace_data;                  ///< whether cache is sampled with/without replacement. Not compatiable with priority.
   float discount_factor[MAX_RWD_DIM];///< discount factor for calculate R with rewards
   float reward_coeff[MAX_RWD_DIM];   ///< reward coefficient
   uint8_t cache_flags[2*N_VIEW];     ///< Whether we should collect prev s,a,r,p,v,q,i and next s,a,r,p,v,q,i in caches
@@ -353,6 +354,7 @@ public:
     cache_size{0},
     reuse_cache{0},
     autosave_step{0},
+    replace_data{1},
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(max_step)},
@@ -427,6 +429,7 @@ public:
     fprintf(f, "cache_size:    %u\n",  cache_size);
     fprintf(f, "reuse_cache:   %d\n",  reuse_cache);
     fprintf(f, "autosave_step: %d\n",  autosave_step);
+    fprintf(f, "replace_data:  %d\n",  replace_data);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
     fprintf(f, "reqbuf_size    %d\n", reqbuf_size());
@@ -661,7 +664,7 @@ public:
    * 
    * @return true iff success
    */
-  bool get_cache(DataCache* p_cache, float& out_sum_weight)
+  bool get_cache(DataCache* p_cache, float& out_sum_weight, int& cache_idx)
   {
     if(prt.get_weight_sum() <= 0) {
       qlog_warning("%s() failed as local weight sum is %lf <= 0.\n", __func__, prt.get_weight_sum());
@@ -670,8 +673,17 @@ public:
 #ifndef LOCKFREE_GET_CACHE
     // Use global lock to get a snapshot of current PrtTree
     std::lock_guard<std::mutex> guard(prt_mutex);
+#else
+    qassert(replace_data); // LOCKFREE_GET_CACHE is only supported when replace_data is true.
 #endif
-    for(size_t i=0; i<cache_size; i++) {
+    out_sum_weight = prt.get_weight_sum();
+    for( ; cache_idx < cache_size; cache_idx ++) {
+      size_t i = (size_t)cache_idx;
+      if(prt.get_weight_sum() <= 0) {
+        qlog_warning("%s() failed as local weight sum is %lf <= 0. (current cache_idx: %d).\n",
+            __func__, prt.get_weight_sum(), cache_idx);
+        return false;
+      }
       long idx;
       do {
         idx = prt.sample_index();
@@ -716,9 +728,14 @@ public:
       }
 #endif
       assert(w > 0);
+      // When replace_data is false, you should make sure that the data generating speed is
+      // faster than the data transmission (cache_size x push_cache() frequency) speed.
+      if(not replace_data) {
+        qassert(priority_exponent == 0.0); // sampling without replacement is not compatiable with priority_exponent.
+        prt.set_weight(idx, 0);
+      }
       s.entry_weight(this).as_array<float>()[0] = w;
     }
-    out_sum_weight = prt.get_weight_sum();
     return true;
   }
 

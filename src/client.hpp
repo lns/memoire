@@ -22,6 +22,7 @@ protected:
   // be used by a single thread at the same time.
   void * ctx;
   Cache * cache_buf;
+  int cache_idx;  // how many samples already saved in current cache.
   uint32_t input_uuid;
 
 public:
@@ -40,6 +41,7 @@ public:
       push_endpoint(push_ep),
       prm(nullptr),
       cache_buf(nullptr),
+      cache_idx(0),
       input_uuid(rem_input_uuid)
   {
     ctx = zmq_ctx_new(); qassert(ctx);
@@ -61,6 +63,7 @@ public:
     if(cache_buf) {
       free(cache_buf);
       cache_buf = nullptr;
+      cache_idx = 0;
     }
     thread_local void * soc = nullptr;
     thread_local Mem reqbuf;
@@ -97,11 +100,13 @@ public:
     prm->cache_size  = p->cache_size;
     prm->reuse_cache = p->reuse_cache;
     prm->autosave_step = p->autosave_step;
+    prm->replace_data = p->replace_data;
     std::copy(std::begin(p->discount_factor), std::end(p->discount_factor), std::begin(prm->discount_factor));
     std::copy(std::begin(p->reward_coeff), std::end(p->reward_coeff), std::begin(prm->reward_coeff));
     std::copy(std::begin(p->cache_flags), std::end(p->cache_flags), std::begin(prm->cache_flags));
     // Make cache buf
     cache_buf = (Cache*)malloc(Cache::nbytes(prm));
+    cache_idx = 0;
   }
 
   /**
@@ -197,7 +202,7 @@ public:
       pushbuf.resize(RM::pushbuf_size());
     }
     Message * push = reinterpret_cast<Message*>(pushbuf.data());
-    bool ret = prm->get_cache(cache_buf, push->sum_weight);
+    bool ret = prm->get_cache(cache_buf, push->sum_weight, cache_idx);
     if(not ret) // failed
       return -1;
     push->type = Message::ProtocalCache;
@@ -206,6 +211,7 @@ public:
     START_TIMER();
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), ZMQ_SNDMORE));
     ZMQ_CALL(zmq_send(soc, cache_buf, push->length, 0));
+    cache_idx = 0;
     STOP_TIMER();
     PRINT_TIMER_STATS(100);
     return 0;
