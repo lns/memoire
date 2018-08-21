@@ -64,7 +64,7 @@ try:
       p.fill(0)
       v.fill(0.5)
       i.fill(False)
-      rem.add_entry(s,a,r,p,v,i, weight=1.0)
+      rem.add_entry(s,a,r,p,v,i)
     rem.close_episode()
     client.update_counter()
     client.write_log("%d" % game_idx)

@@ -32,6 +32,7 @@ class ReplayMemory:
   cache_size          # number of samples in a cache
   max_episode         # max number of episodes allowed in this ReplayMemory
   reuse_cache         # whether to discard used cache or to reuse them
+  autosave_step       # number of steps for autosave current (unfinished) episode to the replay memory
   discount_factor     # \gamma: the (multidimensional) discount factor used for cumulating reward
   reward_coeff        # mixture coefficient for multi-dimensional reward
   cache_flags         # whether previous (s,a,r,p,v,q,i) and next (s,a,r,p,v,q,i) should be cached in caches
@@ -63,7 +64,7 @@ class ReplayMemory:
     The number of `num_episode()` won't change on calling this method,
     until the current episode is closed by `close_episode()` (number of episode +1),
     or `add_entry()` (may cause number of episode -1 due to limited space).
-    A second call of `new_episode()` will clear the added samples
+    A second call of `new_episode()` (not recommended) will clear the added samples
     in previously opened episode, if the previous episode is not closed by a call of `close_episode()`. """
     pass
 
@@ -85,7 +86,7 @@ class ReplayMemory:
     """
     pass
 
-  def add_entry(self, s, a, r, p, v, i, init_w):
+  def add_entry(self, s, a, r, p, v, i):
     """ Add an entry to currently opened episode
 
     This API will add an entry (s,a,r,p,v,i) to current opened episode.
@@ -97,8 +98,7 @@ class ReplayMemory:
     :param  r: reward  (should match reward_buf)
     :param  p: prob    (should match prob_buf)
     :param  v: value   (should match value_buf)
-    :param  i: info    (should match info_buf)
-    :param  init_w:    initial sample weight (normally 1.0) """
+    :param  i: info    (should match info_buf) """
     pass
  
 ```

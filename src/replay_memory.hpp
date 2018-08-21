@@ -308,6 +308,7 @@ public:
   int multi_step;                    ///< Number of steps between prev and next (default 1)
   unsigned cache_size;               ///< Cache size, number of sample in a cache
   int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
+  int autosave_step;                 ///< number of step for auto save (default 0 for no autosave)
   float discount_factor[MAX_RWD_DIM];///< discount factor for calculate R with rewards
   float reward_coeff[MAX_RWD_DIM];   ///< reward coefficient
   uint8_t cache_flags[2*N_VIEW];     ///< Whether we should collect prev s,a,r,p,v,q,i and next s,a,r,p,v,q,i in caches
@@ -325,6 +326,7 @@ public:
 
   long new_offset;                   ///< offset for new episode
   long new_length;                   ///< current length of new episode
+  long autosave_length;              ///< autosaved length of new episode
 
 public:
   /**
@@ -351,6 +353,7 @@ public:
     max_episode{0},
     cache_size{0},
     reuse_cache{0},
+    autosave_step{0},
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(max_step)},
@@ -424,6 +427,7 @@ public:
     fprintf(f, "multi_step:    %d\n",  multi_step);
     fprintf(f, "cache_size:    %u\n",  cache_size);
     fprintf(f, "reuse_cache:   %d\n",  reuse_cache);
+    fprintf(f, "autosave_step: %d\n",  autosave_step);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
     fprintf(f, "reqbuf_size    %d\n", reqbuf_size());
@@ -489,46 +493,49 @@ protected:
   /**
    * Update value in an episode
    */
-  void update_value(const Episode& epi) {
+  void update_value(long off, long len, bool is_finished) {
     assert(reward_buf().size() != 0);
     assert(value_buf().size() != 0);
     assert(qvest_buf().size() != 0);
     const auto& gamma = discount_factor;
     // Fill qvest
-    for(int i=epi.length-1; i>=0; i--) {
-      long post = (epi.offset + i + 1) % max_step;
-      long prev = (epi.offset + i) % max_step;
+    for(int i=len-1; i>=0; i--) {
+      long post = (off + i + 1) % max_step;
+      long prev = (off + i) % max_step;
       auto post_value  = data[post].value(this).as_array<float>();
       auto prev_reward = data[prev].reward(this).as_array<float>();
       auto prev_qvest  = data[prev].qvest(this).as_array<float>();
       auto post_qvest  = data[post].qvest(this).as_array<float>();
       for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
         // TD-Lambda
-        if(i == epi.length-1) // last
-          prev_qvest[j] = prev_reward[j];
+        if(i == len-1) // last
+          prev_qvest[j] = (is_finished ? prev_reward[j] : data[prev].value(this).as_array<float>()[j]);
         else
           prev_qvest[j] = prev_reward[j] + mix_lambda * gamma[j] * post_qvest[j] + (1-mix_lambda) * gamma[j] * post_value[j];
       }
     }
   }
+  void update_value(const Episode& epi) {
+    return update_value(epi.offset, epi.length, true);
+  }
 
   /**
    * Update weight in an episode.
    */
-  void update_weight(const Episode& epi, float episodic_weight_multiplier = 1.0) {
+  void update_weight(long off, long len, float episodic_weight_multiplier) {
     assert(reward_buf().size() != 0);
     assert(value_buf().size() != 0);
     assert(qvest_buf().size() != 0);
-    for(int i=0; i<std::min<int>(frame_stack-1, epi.length); i++) {
-      long idx = (epi.offset + i) % max_step;
+    for(int i=0; i<std::min<int>(frame_stack-1, len); i++) {
+      long idx = (off + i) % max_step;
       prt.set_weight(idx, 0.0);
     }
-    for(int i=0; i<std::min<int>(multi_step, epi.length); i++) {
-      long idx = (epi.offset + epi.length - 1 - i) % max_step;
+    for(int i=0; i<std::min<int>(multi_step, len); i++) {
+      long idx = (off + len - 1 - i) % max_step;
       prt.set_weight(idx, 0.0);
     }
-    for(int i=(frame_stack-1); i<epi.length-multi_step; i++) {
-      long idx = (epi.offset + i) % max_step;
+    for(int i=(frame_stack-1); i<len-multi_step; i++) {
+      long idx = (off + i) % max_step;
       auto prev_value  = data[idx].value(this).as_array<float>();
       auto prev_qvest  = data[idx].qvest(this).as_array<float>();
       // R is computed with TD-lambda, while V is the original value in prediction
@@ -536,8 +543,11 @@ protected:
       for(int i=0; i<(int)prev_qvest.size(); i++)
         priority += reward_coeff[i] * fabs(prev_qvest[i] - prev_value[i]);
       priority = pow(priority, priority_exponent) * episodic_weight_multiplier;
-      prt.set_weight(idx, prt.get_weight(idx) * priority);
+      prt.set_weight(idx, priority);
     }
+  }
+  void update_weight(const Episode& epi, float episodic_weight_multiplier = 1.0) {
+    return update_weight(epi.offset, epi.length, episodic_weight_multiplier);
   }
 
 public:
@@ -546,9 +556,10 @@ public:
    */
   void new_episode() {
     if(stage == 10)
-      qlog_warning("Renew an existing episode. Possible loss of data.\n");
+      qlog_warning("Renew an existing episode. Possible corruption of data.\n");
     new_offset = get_offset_for_new();
     new_length = 0;
+    autosave_length = 0;
     stage = 10;
   }
 
@@ -581,7 +592,7 @@ public:
    * @param p_r     pointer to reward (can be nullptr to be omitted)
    * @param p_p     pointer to prob (can be nullptr to be omitted)
    * @param p_v     pointer to value (can be nullptr to be omitted)
-   * @param weight  sample weight (priority)
+   * @param p_i     pointer to info (can be nullptr to be omitted)
    */
   void add_entry(
       const void * p_s,
@@ -589,24 +600,44 @@ public:
       const void * p_r,
       const void * p_p,
       const void * p_v,
-      const void * p_i,
-      float weight)
+      const void * p_i)
   {
     qassert(stage == 10);
-    if(!episode.empty() and new_offset != get_offset_for_new())
-      qthrow("Please call new_episode() before add_entry().");
     // Check space
-    while(new_length == get_length_for_new()) {
+    while(!episode.empty() and new_length == get_length_for_new()) {
       //qlog_info("new_length: %ld, get_length_for_new: %ld\n", new_length, get_length_for_new());
       remove_oldest();
+    }
+    if(new_length == (long)max_step) {
+      if(autosave_step <= 0)
+        qthrow("ReplayMemory is full and autosave_step <= 0.");
+      // Remove first autosave_step
+      qassert(autosave_step < new_length);
+      if(true) {
+        // clear priority
+        std::lock_guard<std::mutex> guard(prt_mutex);
+        for(int i=0; i<autosave_step; i++) {
+          long idx = (new_offset + i) % max_step;
+          prt.set_weight(idx, 0);
+        }
+      }
+      new_offset = (new_offset + autosave_step) % max_step;
+      new_length -= autosave_step;
     }
     qassert(new_length < get_length_for_new());
     long idx = (new_offset + new_length) % max_step;
     auto& entry = data[idx];
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v, nullptr, p_i);
-    prt.set_weight_without_update(idx, weight); // will be update by update_weight() later in close_episode()
     new_length += 1;
     qassert(new_length <= get_length_for_new());
+    if(autosave_step > 0 and new_length % autosave_step == 0) {
+      // autosave
+      update_value(new_offset, new_length, false);
+      if(true) {
+        std::lock_guard<std::mutex> guard(prt_mutex);
+        update_weight(new_offset, new_length, 1.0);
+      }
+    }
   }
 
   void add_entry(
@@ -615,8 +646,7 @@ public:
       const BufView& r,
       const BufView& p,
       const BufView& v,
-      const BufView& i,
-      float weight)
+      const BufView& i)
   {
     // Check buffer info
     qassert(state_buf().is_consistent_with(s));
@@ -625,7 +655,7 @@ public:
     qassert(prob_buf().is_consistent_with(p));
     qassert(value_buf().is_consistent_with(v));
     qassert(info_buf().is_consistent_with(i));
-    return add_entry(s.ptr_, a.ptr_, r.ptr_, p.ptr_, v.ptr_, i.ptr_, weight);
+    return add_entry(s.ptr_, a.ptr_, r.ptr_, p.ptr_, v.ptr_, i.ptr_);
   }
 
   /**
@@ -635,10 +665,6 @@ public:
    */
   bool get_cache(DataCache* p_cache, float& out_sum_weight)
   {
-    if(episode.size() == 0) {
-      qlog_warning("%s() failed as the ReplayMemory is empty.\n", __func__);
-      return false;
-    }
     if(prt.get_weight_sum() <= 0) {
       qlog_warning("%s() failed as local weight sum is %lf <= 0.\n", __func__, prt.get_weight_sum());
       return false;

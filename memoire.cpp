@@ -67,6 +67,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("multi_step", &RM::multi_step)
     .def_readwrite("cache_size", &RM::cache_size)
     .def_readwrite("reuse_cache", &RM::reuse_cache)
+    .def_readwrite("autosave_step", &RM::autosave_step)
     .def_property("discount_factor",
       [](RM& rm) {
         py::list l;
@@ -131,10 +132,9 @@ PYBIND11_MODULE(memoire /* module name */, m) {
           py::buffer r,
           py::buffer p,
           py::buffer v,
-          py::buffer i,
-          float weight) {
-        rem.add_entry(AS_BV(s), AS_BV(a), AS_BV(r), AS_BV(p), AS_BV(v), AS_BV(i), weight);
-        }, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "info"_a, "weight"_a)
+          py::buffer i) {
+        rem.add_entry(AS_BV(s), AS_BV(a), AS_BV(r), AS_BV(p), AS_BV(v), AS_BV(i));
+        }, "state"_a, "action"_a, "reward"_a, "prob"_a, "value"_a, "info"_a)
     .def("get_entry_buf", [](RM& rem) {
         std::vector<py::array> entry;
         for(int i=0; i<N_VIEW; i++) {
