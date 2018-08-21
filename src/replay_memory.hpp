@@ -326,7 +326,6 @@ public:
 
   long new_offset;                   ///< offset for new episode
   long new_length;                   ///< current length of new episode
-  long autosave_length;              ///< autosaved length of new episode
 
 public:
   /**
@@ -559,7 +558,6 @@ public:
       qlog_warning("Renew an existing episode. Possible corruption of data.\n");
     new_offset = get_offset_for_new();
     new_length = 0;
-    autosave_length = 0;
     stage = 10;
   }
 
