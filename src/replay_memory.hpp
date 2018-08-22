@@ -664,7 +664,7 @@ public:
    * 
    * @return true iff success
    */
-  bool get_cache(DataCache* p_cache, float& out_sum_weight, int& cache_idx)
+  bool get_cache(DataCache* p_cache, float& out_sum_weight, uint32_t& cache_idx)
   {
     if(prt.get_weight_sum() <= 0) {
       qlog_warning("%s() failed as local weight sum is %lf <= 0.\n", __func__, prt.get_weight_sum());
@@ -678,7 +678,7 @@ public:
 #endif
     out_sum_weight = prt.get_weight_sum();
     for( ; cache_idx < cache_size; cache_idx ++) {
-      size_t i = (size_t)cache_idx;
+      size_t i = cache_idx;
       if(prt.get_weight_sum() <= 0) {
         qlog_warning("%s() failed as local weight sum is %lf <= 0. (current cache_idx: %d).\n",
             __func__, prt.get_weight_sum(), cache_idx);

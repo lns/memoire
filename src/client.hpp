@@ -22,7 +22,7 @@ protected:
   // be used by a single thread at the same time.
   void * ctx;
   Cache * cache_buf;
-  int cache_idx;  // how many samples already saved in current cache.
+  uint32_t cache_idx;  // how many samples already saved in current cache.
   uint32_t input_uuid;
 
 public:

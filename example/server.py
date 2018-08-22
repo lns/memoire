@@ -21,10 +21,11 @@ rem.priority_exponent = 0.0
 rem.mix_lambda = 1.0
 rem.frame_stack = 1
 rem.multi_step = 1
-rem.cache_size = 16
+rem.cache_size = 4
 rem.discount_factor = [1.0]
 rem.reward_coeff = [1.0]
 rem.autosave_step = 4
+rem.replace_data = 0
 rem.cache_flags = [1,1,1,0,1,1,1, 1,1,1,0,1,1,1]
 server.set_logfile("actors.log", "w")
 server.print_info()
