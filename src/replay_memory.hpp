@@ -15,6 +15,7 @@
 
 #define MAX_RWD_DIM (256)
 #define N_VIEW (7)
+#define VERSION (20180823ul)
 
 /**
  * Distributed Replay Memory
@@ -327,6 +328,8 @@ public:
 
   long new_offset;                   ///< offset for new episode
   long new_length;                   ///< current length of new episode
+  long incre_episode;                ///< incremental episode (for statistics in update_counter())
+  long incre_step;                   ///< incremental step (for statistics in update_counter())
 
 public:
   /**
@@ -358,7 +361,9 @@ public:
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(max_step)},
-    rng{prt_rng}
+    rng{prt_rng},
+    incre_episode{0},
+    incre_step{0}
   {
     check();
     data.reserve(max_step);
@@ -581,6 +586,7 @@ public:
     }
     while(max_episode > 0 and episode.size() > max_episode)
       remove_oldest();
+    incre_episode += 1;
     stage = 0;
   }
 
@@ -630,6 +636,7 @@ public:
     auto& entry = data[idx];
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v, nullptr, p_i);
     new_length += 1;
+    incre_step += 1;
     qassert(new_length <= get_length_for_new());
     if(autosave_step > 0 and new_length % autosave_step == 0) {
       // autosave
@@ -751,14 +758,24 @@ public:
     static const int ProtocalCounter = 33;  // PUSH, PULL
     static const int ProtocalLog     = 34;  // PUSH, PULL
 
+    uint64_t version;    // version control
     int type;            // Message type
     int length;          // length of payload (in bytes)
     uint32_t sender;     // sender's uuid
     float sum_weight;    // sum of weight, used by ProtocalCache
     DataEntry payload;   // placeholder for actual payload. Note that sizeof(DataEntry) is 0.
+
+    bool check_version() const {
+      if(version != VERSION) {
+        qlog_warning("Message version (%lu) != expected VERSION (%lu)\n", version, VERSION);
+        return false;
+      }
+      return true;
+    }
+
   };
 
-  static int reqbuf_size()  { return sizeof(Message) + sizeof(int); }  // ProtocalCounter
+  static int reqbuf_size()  { return sizeof(Message) + 2 * sizeof(long); }  // ProtocalCounter
   static int repbuf_size()  { return sizeof(Message) + N_VIEW * sizeof(BufView::Data) + sizeof(ReplayMemory); } // ProtocalSizes
   static int pushbuf_size() { return sizeof(Message); }
 

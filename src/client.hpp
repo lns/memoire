@@ -77,6 +77,7 @@ public:
     }
     Message * req = reinterpret_cast<Message*>(reqbuf.data());
     Message * rep = reinterpret_cast<Message*>(repbuf.data());
+    req->version = VERSION;
     req->type = Message::ProtocalSizes;
     req->sender = 0;
     START_TIMER();
@@ -84,6 +85,7 @@ public:
     ZMQ_CALL(zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
     STOP_TIMER();
     PRINT_TIMER_STATS(100);
+    qassert(rep->check_version());
     qassert(rep->type == req->type);
     // Get sizes
     auto vw = ArrayView<BufView::Data>(&rep->payload, N_VIEW);
@@ -174,12 +176,16 @@ public:
       pushbuf.resize(RM::pushbuf_size());
     }
     Message * push = reinterpret_cast<Message*>(pushbuf.data());
+    push->version = VERSION;
     push->type = Message::ProtocalCounter;
     push->length = sizeof(int);
     push->sender = prm->uuid;
     push->sum_weight = 0.0;
-    int * p_length = reinterpret_cast<int *>(&push->payload);
-    *p_length = prm->new_length;
+    long * p_data = reinterpret_cast<long *>(&push->payload);
+    p_data[0] = prm->incre_episode;
+    p_data[1] = prm->incre_step;
+    prm->incre_episode = 0;
+    prm->incre_step = 0;
     START_TIMER();
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     STOP_TIMER();
@@ -205,6 +211,7 @@ public:
     bool ret = prm->get_cache(cache_buf, push->sum_weight, cache_idx);
     if(not ret) // failed
       return -1;
+    push->version = VERSION;
     push->type = Message::ProtocalCache;
     push->length = Cache::nbytes(prm);
     push->sender = prm->uuid;
@@ -232,6 +239,7 @@ public:
       pushbuf.resize(RM::pushbuf_size());
     }
     Message * push = reinterpret_cast<Message*>(pushbuf.data());
+    push->version = VERSION;
     push->type = Message::ProtocalLog;
     push->length = (int)msg.size();
     push->sender = prm->uuid;

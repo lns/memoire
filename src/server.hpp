@@ -211,6 +211,8 @@ public:
     int size;
     while(true) {
       ZMQ_CALL(size = zmq_recv(soc, reqbuf.data(), reqbuf.size(), 0)); qassert(size <= (int)reqbuf.size());
+      qassert(args->check_version());
+      rets->version = VERSION;
       rets->type = args->type;
       rets->sender = rem.uuid;
       if(args->type == Message::ProtocalSizes) {
@@ -266,6 +268,7 @@ public:
       START_TIMER();
       ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0)); qassert(size == (int)buf.size());
       STOP_TIMER();
+      qassert(args->check_version());
       if(args->type == Message::ProtocalCache) {
         qassert(args->length == (int)expected_size);
         qassert(check_multipart(soc));
@@ -288,9 +291,9 @@ public:
       else if(args->type == Message::ProtocalCounter) {
         // Update counters
         std::lock_guard<std::mutex> guard(counter_mutex);
-        int * p_length = reinterpret_cast<int *>(&args->payload);
-        total_episodes += 1;
-        total_steps += *p_length;
+        long * p_data = reinterpret_cast<long *>(&args->payload);
+        total_episodes += p_data[0];
+        total_steps += p_data[1];
       }
       else if(args->type == Message::ProtocalLog) {
         if(args->length >= (int)msg_buf.size())
