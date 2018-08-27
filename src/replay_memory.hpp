@@ -775,9 +775,9 @@ public:
 
   };
 
-  static int reqbuf_size()  { return sizeof(Message) + 2 * sizeof(long); }  // ProtocalCounter
+  static int reqbuf_size()  { return sizeof(Message); }
   static int repbuf_size()  { return sizeof(Message) + N_VIEW * sizeof(BufView::Data) + sizeof(ReplayMemory); } // ProtocalSizes
-  static int pushbuf_size() { return sizeof(Message); }
+  static int pushbuf_size() { return sizeof(Message) + 2 * sizeof(long); }  // ProtocalCounter
 
   enum Mode {
     Conn = 0,
