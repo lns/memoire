@@ -385,9 +385,6 @@ public:
     qassert(reward_buf().format_ == "f");
     qassert(value_buf().format_  == "f");
     qassert(qvest_buf().format_  == "f");
-    if(prob_buf().ndim() > 0)
-      qlog_error("prob (%s) should be a single number.\n",
-          prob_buf().str().c_str());
     if(reward_buf().ndim() > 1)
       qlog_error("reward (%s) should be a single number or a 1-dim array.\n",
           reward_buf().str().c_str());
