@@ -6,6 +6,7 @@
 #include "replay_memory.hpp"
 #include "server.hpp"
 #include "client.hpp"
+#include "py_serial.hpp"
 
 namespace py = pybind11;
 using namespace py::literals;
@@ -21,18 +22,19 @@ void print_logo() {
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
+typedef py::array_t<uint8_t, py::array::c_style> pyarr_uint8;
 
 typedef BufView BV;
 
 static qlib::LCG64 lcg64;
 
-BufView AS_BV(py::buffer& b) {
-  py::buffer_info info = b.request();
-  return BufView(info.ptr, info.itemsize, info.format, info.shape, info.strides);
-}
-
 PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire, a distributed prioritized replay memory";
+
+  m.def("get_descr", &get_descr);
+  m.def("get_descr_nbytes", &get_descr_nbytes);
+  m.def("descr_serialize", &descr_serialize);
+  m.def("descr_unserialize", &descr_unserialize);
 
   py::class_<BV>(m, "BufView")
     .def_readonly("ptr", &BV::ptr_)
