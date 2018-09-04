@@ -245,11 +245,13 @@ public:
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
-    if(not caches) {
+    if(true) {
       std::lock_guard<std::mutex> guard(cache_mutex);
-      size_t n_caches = sample_index.size();
-      caches = new Vector<Cache>(Cache::nbytes(&rem));
-      caches->resize(n_caches);
+      if(not caches) {
+        size_t n_caches = sample_index.size();
+        caches = new Vector<Cache>(Cache::nbytes(&rem));
+        caches->resize(n_caches);
+      }
     }
     THREAD_LOCAL_TIMER;
     Mem buf(rem.pushbuf_size());
