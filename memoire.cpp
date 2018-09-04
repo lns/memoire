@@ -34,7 +34,13 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   m.def("get_descr", &get_descr);
   m.def("get_descr_nbytes", &get_descr_nbytes);
   m.def("descr_serialize", &descr_serialize);
+  m.def("get_buf_descr_1", &get_buf_descr_1);
+  m.def("get_buf_descr_2", &get_buf_descr_2);
   m.def("descr_unserialize", &descr_unserialize);
+  m.def("descr_unserialize_1", &descr_unserialize_1);
+  m.def("descr_unserialize_2", &descr_unserialize_2);
+  m.def("pickle_dumps", &pickle_dumps);
+  m.def("pickle_loads", &pickle_loads);
 
   py::class_<BV>(m, "BufView")
     .def_readonly("ptr", &BV::ptr_)

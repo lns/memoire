@@ -16,7 +16,11 @@ def check_eq(a, b):
     eq = [check_eq(a[i], b[i]) for i in range(len(a))]
     return all(eq)
   else:
-    return (a == b).all()
+    test = (a==b)
+    if isinstance(test, bool):
+      return test
+    else:
+      return (a == b).all()
 
 def descr_serial_test(a):
   start = time.time()
@@ -37,6 +41,24 @@ def serial_test(a):
   descr_serial_test(a)
   pickle_serial_test(a)
 
+def descr_serial_test_1(shape, batch_size):
+  d = memoire.get_descr(np.random.random(shape))
+  l = [np.random.random(shape) for i in range(batch_size)]
+  s = [memoire.descr_serialize(each, d) for each in l]
+  t = np.concatenate(s)
+  a = np.concatenate(l).reshape((batch_size,) + tuple(shape))
+  b = memoire.descr_unserialize_1(t, d, batch_size)
+  assert check_eq(a,b)
+
+def descr_serial_test_2(shape, batch_size, frame_stack):
+  d = memoire.get_descr(np.random.random(shape))
+  l = [np.random.random(shape) for i in range(batch_size * frame_stack)]
+  s = [memoire.descr_serialize(each, d) for each in l]
+  t = np.concatenate(s)
+  a = np.concatenate(l).reshape((batch_size,frame_stack) + tuple(shape))
+  b = memoire.descr_unserialize_2(t, d, batch_size, frame_stack)
+  assert check_eq(a,b)
+
 def main_test():
   a = np.ndarray([84,84], dtype=np.uint8)
   b = np.ndarray([84,84], dtype=np.float64)
@@ -53,4 +75,6 @@ def main_test():
 
 if __name__ == '__main__':
   main_test()
+  descr_serial_test_1([2,3], 4)
+  descr_serial_test_2([2,3], 4, 3)
 
