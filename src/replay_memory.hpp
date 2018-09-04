@@ -15,7 +15,9 @@
 
 #define MAX_RWD_DIM (256)
 #define N_VIEW (7)
-#define VERSION (20180823ul)
+#define VERSION (20180904ul)
+
+#define EPS (1e-6)
 
 /**
  * Distributed Replay Memory
@@ -323,6 +325,7 @@ protected:
   PrtTree prt;                       ///< Priority tree for sampling
   std::mutex prt_mutex;              ///< mutex for priority tree
   int stage;                         ///< init -> 0 -> new -> 10 -> close -> 0
+  float ma_sqa;                      ///< Moving average estimation of squared advantage
 public:
   qlib::RNG * rng;                   ///< Random Number Generator
 
@@ -361,6 +364,7 @@ public:
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(max_step)},
+    ma_sqa{1.0},
     rng{prt_rng},
     incre_episode{0},
     incre_step{0}
@@ -545,8 +549,13 @@ protected:
       // R is computed with TD-lambda, while V is the original value in prediction
       float priority = 0;
       for(int i=0; i<(int)prev_qvest.size(); i++)
-        priority += reward_coeff[i] * fabs(prev_qvest[i] - prev_value[i]);
-      priority = pow(priority, priority_exponent) * episodic_weight_multiplier;
+        priority += reward_coeff[i] * (prev_qvest[i] - prev_value[i]);
+      // priority is (R-V), now update ma_sqa
+      ma_sqa += 1e-8 * (priority * priority - ma_sqa);
+      ma_sqa = std::max<float>(ma_sqa, EPS);
+      float c = sqrt(ma_sqa/2);
+      // calculate real priority
+      priority = pow(fabs(priority/c), priority_exponent) * episodic_weight_multiplier;
       prt.set_weight(idx, priority);
     }
   }
