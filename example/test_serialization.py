@@ -3,8 +3,8 @@
 
 import numpy as np
 import memoire
-#import pickle
-import cPickle as pickle
+import pickle
+#import cPickle as pickle
 import time
 
 def check_eq(a, b):
@@ -16,11 +16,11 @@ def check_eq(a, b):
     eq = [check_eq(a[i], b[i]) for i in range(len(a))]
     return all(eq)
   else:
-    test = (a==b)
+    test = (a==b) | (np.isnan(a) & np.isnan(b))
     if isinstance(test, bool):
       return test
     else:
-      return (a == b).all()
+      return test.all()
 
 def descr_serial_test(a):
   start = time.time()

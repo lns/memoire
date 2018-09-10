@@ -9,8 +9,6 @@ using namespace py::literals;
 typedef py::array_t<float, py::array::c_style> pyarr_float;
 typedef py::array_t<uint8_t, py::array::c_style> pyarr_uint8;
 
-py::module pickle = py::module::import("pickle");
-
 BufView AS_BV(py::buffer b) {
   py::buffer_info info = b.request();
   return BufView(info.ptr, info.itemsize, info.format, info.shape, info.strides);
@@ -20,6 +18,7 @@ BufView AS_BV(py::buffer b) {
  * Equivalent to `pickle.dumps(o)`
  */
 py::bytes pickle_dumps(py::object o) {
+  py::module pickle = py::module::import("pickle");
   py::object ret = pickle.attr("dumps")(o);
   return py::cast<py::bytes>(ret);
 }
@@ -28,6 +27,7 @@ py::bytes pickle_dumps(py::object o) {
  * Equivalent to `pickle.loads(s)`
  */
 py::object pickle_loads(py::bytes s) {
+  py::module pickle = py::module::import("pickle");
   py::object ret = pickle.attr("loads")(s);
   return ret;
 }
