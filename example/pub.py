@@ -13,7 +13,9 @@ v = np.ndarray([1], dtype=np.float32)
 q = np.ndarray([1], dtype=np.float32)
 i = np.ndarray([1], dtype=np.float32)
 template = (s,a,r,p,v,q,i)
-server = ReplayMemoryServer(*template, max_step=0, n_caches=0, pub_endpoint="tcp://*:5560")
+pub_ep = "epgm://eth1;224.0.2.1:12345"
+print(pub_ep)
+server = ReplayMemoryServer(*template, max_step=0, n_caches=0, pub_endpoint=pub_ep)
 
 try:
   time.sleep(1)

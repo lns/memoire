@@ -5,7 +5,9 @@ import os
 import time
 from memoire import ReplayMemory, ReplayMemoryServer, ReplayMemoryClient, Bind, Conn
 
-client = ReplayMemoryClient("tcp://localhost:5560", "", "")
+pub_ep = "epgm://eth1;224.0.2.1:12345"
+print(pub_ep)
+client = ReplayMemoryClient(pub_ep, "", "")
 
 try:
   print(client.sub_bytes("M01"))

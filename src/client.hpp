@@ -124,6 +124,12 @@ public:
       qassert(soc = zmq_socket(ctx, ZMQ_SUB));
       int rcv_hwm = 4;
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &rcv_hwm, sizeof(rcv_hwm)));
+      int multicast_hops = 255; // TODO
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_MULTICAST_HOPS, &multicast_hops, sizeof(multicast_hops)));
+      int rate = 1048576; // 1Gb
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RATE, &rate, sizeof(rate)));
+      int recovery_ivl = 200; // 200ms
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RECOVERY_IVL, &recovery_ivl, sizeof(recovery_ivl)));
       ZMQ_CALL(zmq_connect(soc, sub_endpoint.c_str()));
       tpcbuf.resize(256);
       subbuf.resize(256);
