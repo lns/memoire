@@ -79,6 +79,8 @@ public:
     THREAD_LOCAL_TIMER;
     if(not soc) {
       qassert(soc = zmq_socket(ctx, ZMQ_PUB));
+      int snd_hwm = 4;
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
       ZMQ_CALL(zmq_bind(soc, pub_endpoint.c_str()));
     }
     START_TIMER();
