@@ -68,6 +68,11 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("entry_size", &RM::entry_size)
     .def_readonly("max_step", &RM::max_step)
     .def_readonly("uuid", &RM::uuid)
+    .def_readonly("new_offset", &RM::new_offset)
+    .def_readonly("new_length", &RM::new_length)
+    .def_readonly("incre_episode", &RM::incre_episode)
+    .def_readonly("incre_step", &RM::incre_step)
+    .def_readonly("cur_step", &RM::cur_step)
     .def_readwrite("max_episode", &RM::max_episode)
     .def_readwrite("priority_exponent", &RM::priority_exponent)
     .def_readwrite("mix_lambda", &RM::mix_lambda)
@@ -77,6 +82,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("reuse_cache", &RM::reuse_cache)
     .def_readwrite("autosave_step", &RM::autosave_step)
     .def_readwrite("replace_data", &RM::replace_data)
+    .def_readwrite("step_discount", &RM::step_discount)
     .def_property("discount_factor",
       [](RM& rm) {
         py::list l;
