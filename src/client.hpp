@@ -103,6 +103,7 @@ public:
     prm->reuse_cache = p->reuse_cache;
     prm->autosave_step = p->autosave_step;
     prm->replace_data = p->replace_data;
+    prm->step_discount = p->step_discount;
     std::copy(std::begin(p->discount_factor), std::end(p->discount_factor), std::begin(prm->discount_factor));
     std::copy(std::begin(p->reward_coeff), std::end(p->reward_coeff), std::begin(prm->reward_coeff));
     std::copy(std::begin(p->cache_flags), std::end(p->cache_flags), std::begin(prm->cache_flags));
