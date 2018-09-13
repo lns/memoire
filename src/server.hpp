@@ -81,12 +81,14 @@ public:
       qassert(soc = zmq_socket(ctx, ZMQ_PUB));
       int snd_hwm = 4;
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &snd_hwm, sizeof(snd_hwm)));
-      int multicast_hops = 255; // TODO
+      #ifdef EPGM_EXPERIMENT
+      int multicast_hops = 255; // default 1
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_MULTICAST_HOPS, &multicast_hops, sizeof(multicast_hops)));
       int rate = 1048576; // 1Gb
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RATE, &rate, sizeof(rate)));
       int recovery_ivl = 200; // 200ms
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RECOVERY_IVL, &recovery_ivl, sizeof(recovery_ivl)));
+      #endif
       ZMQ_CALL(zmq_bind(soc, pub_endpoint.c_str()));
     }
     START_TIMER();

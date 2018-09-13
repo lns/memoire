@@ -15,7 +15,7 @@
 
 #define MAX_RWD_DIM (256)
 #define N_VIEW (7)
-#define VERSION (20180904ul)
+#define VERSION (20180913ul)
 
 #define EPS (1e-6)
 
@@ -313,6 +313,7 @@ public:
   int reuse_cache;                   ///< whether we will reuse cache for sampling batches (see server.hpp)
   int autosave_step;                 ///< number of step for auto save (default 0 for no autosave)
   int replace_data;                  ///< whether cache is sampled with/without replacement. Not compatiable with priority.
+  float step_discount;               ///< discount coefficient for state distribution sampling.
   float discount_factor[MAX_RWD_DIM];///< discount factor for calculate R with rewards
   float reward_coeff[MAX_RWD_DIM];   ///< reward coefficient
   uint8_t cache_flags[2*N_VIEW];     ///< Whether we should collect prev s,a,r,p,v,q,i and next s,a,r,p,v,q,i in caches
@@ -333,6 +334,7 @@ public:
   long new_length;                   ///< current length of new episode
   long incre_episode;                ///< incremental episode (for statistics in update_counter())
   long incre_step;                   ///< incremental step (for statistics in update_counter())
+  long cur_step;                     ///< current length since episode beginning
 
 public:
   /**
@@ -361,6 +363,7 @@ public:
     reuse_cache{0},
     autosave_step{0},
     replace_data{1},
+    step_discount{1.0},
     uuid{0},
     data{entry_size},
     prt{prt_rng, static_cast<int>(max_step)},
@@ -436,6 +439,7 @@ public:
     fprintf(f, "reuse_cache:   %d\n",  reuse_cache);
     fprintf(f, "autosave_step: %d\n",  autosave_step);
     fprintf(f, "replace_data:  %d\n",  replace_data);
+    fprintf(f, "step_discount: %lf\n", step_discount);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "cache::nbytes  %lu\n", DataCache::nbytes(this));
     fprintf(f, "reqbuf_size    %d\n", reqbuf_size());
@@ -542,6 +546,8 @@ protected:
       long idx = (off + len - 1 - i) % max_step;
       prt.set_weight(idx, 0.0);
     }
+    assert(cur_step <= len);
+    float state_dist = pow(step_discount, (cur_step - len) + (frame_stack - 1));
     for(int i=(frame_stack-1); i<len-multi_step; i++) {
       long idx = (off + i) % max_step;
       auto prev_value  = data[idx].value(this).as_array<float>();
@@ -555,7 +561,8 @@ protected:
       ma_sqa = std::max<float>(ma_sqa, EPS);
       float c = sqrt(ma_sqa/2);
       // calculate real priority
-      priority = pow(fabs(priority/c), priority_exponent) * episodic_weight_multiplier;
+      priority = state_dist * pow(fabs(priority/c), priority_exponent) * episodic_weight_multiplier;
+      state_dist *= step_discount;
       prt.set_weight(idx, priority);
     }
   }
@@ -572,6 +579,7 @@ public:
       qlog_warning("Renew an existing episode. Possible corruption of data.\n");
     new_offset = get_offset_for_new();
     new_length = 0;
+    cur_step = 0;
     stage = 10;
   }
 
@@ -643,6 +651,7 @@ public:
     entry.from_memory(this, 0, p_s, p_a, p_r, p_p, p_v, nullptr, p_i);
     new_length += 1;
     incre_step += 1;
+    cur_step += 1;
     qassert(new_length <= get_length_for_new());
     if(autosave_step > 0 and new_length % autosave_step == 0) {
       // autosave
