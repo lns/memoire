@@ -561,9 +561,9 @@ protected:
       ma_sqa = std::max<float>(ma_sqa, EPS);
       float c = sqrt(ma_sqa/2);
       // calculate real priority
-      priority = state_dist * pow(fabs(priority/c), priority_exponent) * episodic_weight_multiplier;
+      priority = pow(fabs(priority/c), priority_exponent) * episodic_weight_multiplier;
+      prt.set_weight(idx, priority * state_dist);
       state_dist *= step_discount;
-      prt.set_weight(idx, priority);
     }
   }
   void update_weight(const Episode& epi, float episodic_weight_multiplier = 1.0) {
