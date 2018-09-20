@@ -546,7 +546,7 @@ protected:
       long idx = (off + len - 1 - i) % max_step;
       prt.set_weight(idx, 0.0);
     }
-    assert(cur_step <= len);
+    assert(cur_step >= len);
     float state_dist = pow(step_discount, (cur_step - len) + (frame_stack - 1));
     for(int i=(frame_stack-1); i<len-multi_step; i++) {
       long idx = (off + i) % max_step;
