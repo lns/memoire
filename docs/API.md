@@ -158,18 +158,31 @@ class ReplayMemoryServer
     :param  mode:      'Bind' for binding the endpoint to a port, or 'Conn' for connecting to the endpoint """
     pass
 
-  def rep_proxy_main(self, front_ep, back_ep):
+  def rep_proxy_main(self, front_ep, front_mode, back_ep, back_mode):
     """ Mainloop for a REP Proxy
 
     :param  front_ep:  front endpoint
-    :param  back_ep:   back endpoint """
+    :param  front_mode:Bind or Conn
+    :param  back_ep:   back endpoint
+    :param  back_mode: Bind or Conn """
     pass
 
-  def pull_proxy_main(self, front_ep, back_ep):
+  def pull_proxy_main(self, front_ep, front_mode, back_ep, back_mode):
     """ Mainloop for a PULL Proxy
 
     :param  front_ep:  front endpoint
-    :param  back_ep:   back endpoint """
+    :param  front_mode:Bind or Conn
+    :param  back_ep:   back endpoint
+    :param  back_mode: Bind or Conn """
+    pass
+
+  def pub_proxy_main(self, front_ep, front_mode, back_ep, back_mode):
+    """ Mainloop for a PUB Proxy
+
+    :param  front_ep:  front endpoint
+    :param  front_mode:Bind or Conn
+    :param  back_ep:   back endpoint
+    :param  back_mode: Bind or Conn """
     pass
 
   def get_batch(self, batch_size):

@@ -13,7 +13,8 @@ v = np.ndarray([1], dtype=np.float32)
 q = np.ndarray([1], dtype=np.float32)
 i = np.ndarray([1], dtype=np.float32)
 template = (s,a,r,p,v,q,i)
-pub_ep = "epgm://eth1;224.0.2.1:12345"
+#pub_ep = "epgm://eth1;224.0.2.1:12345"
+pub_ep = "tcp://*:5560"
 print(pub_ep)
 server = ReplayMemoryServer(*template, max_step=0, n_caches=0, pub_endpoint=pub_ep)
 
