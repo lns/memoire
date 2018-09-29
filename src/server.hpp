@@ -58,6 +58,7 @@ public:
     fprintf(f, "total_caches:  %lu\n", total_caches);
     fprintf(f, "total_steps:   %lu\n", total_steps);
     fprintf(f, "logfile:       %s\n",  logfile_path.c_str());
+    fprintf(f, "n_caches:      %lu\n", caches ? caches->size() : 0);
     rem.print_info(f);
   }
 
