@@ -15,7 +15,7 @@ public:
   const size_t entry_size;
   
   T * data() const { return reinterpret_cast<T*>(data_); }
-  size_t size() const { return entry_num_; };
+  size_t size() const { return entry_num_; }
   size_t nbytes() const { return entry_num_ * entry_size; }
 
   /**
@@ -38,7 +38,7 @@ public:
 
   /**
    * Copy from a piece of memory
-   * @param src   can be nullptr to be omitted
+   * @param src  can be nullptr to be omitted
    */
   void from_memory(const T* src) {
     if(src)
@@ -47,7 +47,7 @@ public:
 
   /**
    * Copy to a piece of memory
-   * @param dst   can be nullptr to be omitted
+   * @param dst  can be nullptr to be omitted
    */
   void to_memory(T* dst) const {
     if(dst)
