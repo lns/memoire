@@ -23,7 +23,7 @@ PYINC=`python -m pybind11 --includes`
 #PY34INC=`python3.4 -m pybind11 --includes`
 #PYINC=$(PY27INC)
 
-INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include -I$(PYBIND11_ROOT)/include 
+INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include -I$(ROOT)/proto -I$(PYBIND11_ROOT)/include 
 LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
 ALL=memoire.so

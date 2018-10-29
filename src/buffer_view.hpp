@@ -6,6 +6,7 @@
 #include <vector>
 #include "array_view.hpp"
 #include "qlog.hpp"
+#include "msg.pb.h"
 
 /**
  * A class for an array of runtime-sized, runtime-typed entries. Does not own the memory.
@@ -46,6 +47,7 @@ public:
       memcpy(buf.stride_.data(), stride_, ndim_*sizeof(stride_[0]));
     }
   };
+
 
   BufView() : ptr_{nullptr}, itemsize_{0}, format_{""}, shape_{}, stride_{} {}
   BufView(void * p, ssize_t is, const std::string& f, const std::vector<ssize_t>& sp, const std::vector<ssize_t>& st)
@@ -131,6 +133,38 @@ public:
   void to_memory(void * dst) const {
     if(dst)
       std::memcpy(dst, ptr_, nbytes());
+  }
+
+  /**
+   * Copy from a Protocal Buffer
+   */
+  void from_pb(const proto::BufView * pb) {
+    qassert(pb);
+    ptr_ = nullptr;
+    itemsize_ = pb->itemsize();
+    format_ = pb->format();
+    shape_.resize(pb->shape_size());
+    for(int i=0; i<pb->shape_size(); i++)
+      shape_[i] = pb->shape(i);
+    stride_.resize(pb->stride_size());
+    for(int i=0; i<pb->stride_size(); i++)
+      stride_[i] = pb->stride(i);
+    qassert(shape_.size() == stride_.size());
+  }
+
+  /**
+   * Copy to a Protocal Buffer
+   */
+  void to_pb(proto::BufView * pb) {
+    qassert(pb);
+    pb->set_itemsize(itemsize_);
+    pb->set_format(format_);
+    pb->clear_shape();
+    for(unsigned i=0; i<shape_.size(); i++)
+      pb->add_shape(shape_[i]);
+    pb->clear_stride();
+    for(unsigned i=0; i<stride_.size(); i++)
+      pb->add_stride(stride_[i]);
   }
 
   /**

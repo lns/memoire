@@ -1,0 +1,96 @@
+/**
+ * @file: msg.proto
+ * @brief: Protobuf for a Message
+ * @author: qing
+ * @date: 2018-10-17
+ */
+syntax = "proto2";
+package proto;
+
+enum MsgType {
+  REQ_GET_INFO = 11;
+  REP_GET_INFO = 12;
+  PUSH_DATA = 21;
+  REQ_NEW_MATCH = 51;
+  REP_NEW_MATCH = 52;
+  REQ_GET_MODEL = 53;
+  REP_GET_MODEL = 54;
+  REQ_MATCH_RES = 55;
+  REP_MATCH_RES = 56;
+}
+
+message BufView {
+  required int32 itemsize = 1;
+  required string format = 2;
+  repeated int32 shape = 3;
+  repeated int32 stride = 4;
+}
+
+message ReqGetInfo {
+}
+
+message RepGetInfo {
+  repeated bytes x_descr_pickle = 11;
+  required uint32 slot_index = 21;
+  repeated BufView view = 31;
+}
+
+message PushData {
+  required bool is_new_episode = 1; // actually, this is redundant.
+  required bool is_episode_end = 2;
+  required uint32 start_step = 3;
+  required uint32 n_step = 4;
+  required uint32 slot_index = 5;
+  repeated bytes data = 6;
+}
+
+message ReqNewMatch {
+  repeated uint64 model_id = 1;
+  repeated uint32 to_be_filled = 2;
+}
+
+message RepNewMatch {
+  repeated uint64 model_id = 1;
+}
+
+message ReqGetModel {
+  required uint64 model_id = 1;
+}
+
+message RepGetModel {
+  required uint64 model_id = 1;
+  repeated bytes model_data = 2;
+}
+
+message ReqMatchRes {
+  repeated bytes match_name = 1;  // What match
+  repeated bytes match_site = 2;  // Where is the match
+  repeated bytes match_time = 3;  // When happened
+  repeated bytes match_info = 4;  // How is the match
+  required uint32 round = 5;
+  repeated uint64 players = 6;
+  required int32 result = 7;
+}
+
+message RepMatchRes {
+}
+
+message Msg {
+  oneof msg {
+    ReqGetInfo  req_get_info  = 11;
+    RepGetInfo  rep_get_info  = 12;
+    PushData    push_data     = 21;
+    ReqNewMatch req_new_match = 51;
+    RepNewMatch rep_new_match = 52;
+    ReqGetModel req_get_model = 53;
+    RepGetModel rep_get_model = 54;
+    ReqMatchRes req_match_res = 55;
+    RepMatchRes rep_match_res = 56;
+  }
+  required MsgType type = 99;  // What type of message
+
+  optional bytes version = 100 [default='0.1.0'];// Version of protocal interface
+  optional bytes sender = 101;  // Sender's uuid
+  optional string error = 102;  // error message
+};
+

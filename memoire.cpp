@@ -4,8 +4,8 @@
 
 #include <cstdio>
 #include "replay_memory.hpp"
-#include "server.hpp"
-#include "client.hpp"
+//#include "server.hpp"
+//#include "client.hpp"
 #include "py_serial.hpp"
 
 namespace py = pybind11;
@@ -31,6 +31,7 @@ static qlib::LCG64 lcg64;
 PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire, a distributed prioritized replay memory";
 
+  /*
   m.def("get_descr", &get_descr);
   m.def("get_descr_nbytes", &get_descr_nbytes);
   m.def("descr_serialize", &descr_serialize);
@@ -41,6 +42,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   m.def("descr_unserialize_2", &descr_unserialize_2);
   m.def("pickle_dumps", &pickle_dumps);
   m.def("pickle_loads", &pickle_loads);
+  */
 
   py::class_<BV>(m, "BufView")
     .def_readonly("ptr", &BV::ptr_)
@@ -57,6 +59,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
       })
     ;
 
+/*
   py::class_<RM>(m, "ReplayMemory")
     .def_property_readonly("state_buf",  &RM::state_buf)
     .def_property_readonly("action_buf", &RM::action_buf)
@@ -252,6 +255,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         return std::make_tuple(prev,next,entry_weight_arr);
       },"batch_size"_a)
     ;
+    */
 
 }
 

@@ -12,7 +12,7 @@ class Vector {
   Mem mem_;                  ///< underlying memory
   size_t entry_num_;         ///< number of entries
 public:
-  const size_t entry_size;   ///< size of each entry (in bytes)
+  const unsigned entry_size;   ///< size of each entry (in bytes)
   
   void * data() const { return mem_.data(); };
   size_t size() const { return entry_num_; };
@@ -22,7 +22,7 @@ public:
    * Constructor
    * @param e_size  actual memory size of each entry
    */
-  Vector(size_t e_size) : mem_{}, entry_num_{0}, entry_size{e_size} {}
+  Vector(unsigned e_size) : mem_{}, entry_num_{0}, entry_size{e_size} {}
   // TODO: to be tested
   Vector(Vector&& src) : mem_{src.mem_}, entry_num_{src.entry_num_}, entry_size{src.entry_size} {}
   Vector(const Vector& src) : mem_{src.mem_}, entry_num_{src.entry_num_}, entry_size{src.entry_size} {}
