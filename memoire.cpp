@@ -19,7 +19,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire v2, ver %lu, built on %s.\n", VERSION, __DATE__);
+  fprintf(stderr, " Memoire v3, ver %lu, built on %s.\n", VERSION, __DATE__);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -46,8 +46,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("shape", &BV::shape_)
     .def_readonly("stride", &BV::stride_)
     .def(py::init([](py::buffer b) {
-          return AS_BV(b);
-          }), "buffer"_a)
+        return AS_BV(b);
+      }), "buffer"_a)
     .def("__str__", &BV::str)
     .def("as_array", [](BV& self) {
         return py::array(py::dtype(self.format_), self.shape_, self.stride_, self.ptr_);
@@ -62,7 +62,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
 
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const std::string&, const std::string&, const std::string&>(),
-        "req_endpoint"_a, "push_endpoint"_a, "input_uuid"_a)
+        "req_endpoint"_a, "push_endpoint"_a, "uuid"_a)
     .def_readonly("x_descr_pickle", &RMC::x_descr_pickle)
     .def_readonly("remote_slot_index", &RMC::remote_slot_index)
     .def_readonly("entry_size", &RMC::entry_size)
@@ -71,19 +71,25 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("push_endpoint", &RMC::push_endpoint)
     .def_readonly("uuid", &RMC::uuid)
     .def("get_info", &RMC::get_info, py::call_guard<py::gil_scoped_release>())
-    .def("push_data", [](RMC& rmc, py::list data, bool is_episode_end) {
-        uint32_t n_step = data.size();
-        if(rmc.x_descr_pickle == "")
-          qlog_error("x_descr_pickle not initialied. Please call get_info() first.\n");
-        static py::object descr = pickle_loads(py::bytes(rmc.x_descr_pickle));
-        Mem mem(rmc.entry_size * n_step);
-        for(unsigned i=0; i<n_step; i++)
-          qassert(rmc.entry_size == descr_serialize_to_mem(data[i], descr, (char*)mem.data() + i * rmc.entry_size));
-        if(true) {
-          py::gil_scoped_release release;
-          rmc.push_data(mem.data(), n_step, is_episode_end);
-        }
-      }, "data"_a, "is_episode_end"_a)
+    .def("push_data", &RMC::py_push_data)
+    ;
+
+  py::class_<RMS>(m, "ReplayMemoryServer")
+    .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot, std::string uuid) {
+        // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
+        py::list x = py::list(entry)[py::slice(0,-3,1)];
+        py::object descr = get_descr(x);
+        pyarr_uint8 bundle = descr_serialize(x, descr);
+        std::string x_descr_pickle = pickle_dumps(descr);
+        BV view[N_VIEW];
+        view[0] = AS_BV(bundle);
+        view[1] = AS_BV(entry[-3]); // r
+        view[2] = AS_BV(entry[-2]); // p
+        view[3] = AS_BV(entry[-1]); // v
+        view[4] = AS_BV(entry[-1]); // q
+        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,uuid,x_descr_pickle)));
+      }), "entry"_a, "max_step"_a, "n_slot"_a, "uuid"_a)
+    .def("get_data", &RMS::py_get_data)
     ;
 
   py::class_<Proxy>(m, "Proxy")

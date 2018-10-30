@@ -4,6 +4,7 @@
 #include "replay_memory.hpp"
 #include "qlog.hpp"
 #include "msg.pb.h"
+#include "py_serial.hpp"
 
 template<class RM>
 class ReplayMemoryClient : public non_copyable {
@@ -113,6 +114,56 @@ public:
       start_step = 0;
     else
       start_step += n_step;
+  }
+
+  void py_serialize_entry_to_mem(py::tuple entry, void * data) {
+    if(x_descr_pickle == "")
+      qlog_error("x_descr_pickle not initialied. Please call get_info() first.\n");
+    qassert(view.size() == 5);
+    static py::object descr = pickle_loads(py::bytes(x_descr_pickle));
+    char * head = static_cast<char*>(data);
+    // x
+    head += descr_serialize_to_mem(py::list(entry)[py::slice(0,-3,1)], descr, head);
+    if(true) { // r
+      BufView v = AS_BV(entry[-3]);
+      qassert(v.is_consistent_with(view[1]) or "Shape of r mismatch");
+      v.to_memory(head);
+      head += v.nbytes();
+    }
+    if(true) { // p
+      BufView v = AS_BV(entry[-2]);
+      qassert(v.is_consistent_with(view[2]) or "Shape of p mismatch");
+      v.to_memory(head);
+      head += v.nbytes();
+    }
+    if(true) { // v
+      BufView v = AS_BV(entry[-1]);
+      qassert(v.is_consistent_with(view[3]) or "Shape of v mismatch");
+      v.to_memory(head);
+      head += v.nbytes();
+    }
+    if(true) { // q
+      BufView v = AS_BV(entry[-1]);
+      qassert(v.is_consistent_with(view[4]) or "Shape of q mismatch");
+      v.to_memory(head); // reuse data from v
+      head += v.nbytes();
+    }
+    qassert(head == static_cast<char*>(data) + entry_size);
+  }
+
+  void py_push_data(py::list data, bool is_episode_end) {
+    uint32_t n_step = data.size();
+    Mem mem(entry_size * n_step);
+    // Serialize data to memory
+    for(unsigned i=0; i<n_step; i++) {
+      char * head = (char*)mem.data() + i * entry_size;
+      py_serialize_entry_to_mem(data[i], head);
+    }
+    // Send data to remote
+    if(true) {
+      py::gil_scoped_release release;
+      push_data(mem.data(), n_step, is_episode_end);
+    }
   }
 
 };

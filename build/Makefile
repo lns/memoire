@@ -33,11 +33,11 @@ ALL=memoire.so msg.pb.o
 
 all: $(ALL)
 
-msg.pb.o: $(ROOT)/proto/msg.pb.cc $(ROOT)/src/*
-	$(CXX) $(CXXFLAGS) -fPIC -c $(PYINC) $(INCLUDES) -o $@ $<
+msg.pb.o: $(ROOT)/proto/msg.pb.cc $(ROOT)/proto/*.proto
+	$(CXX) $(CXXFLAGS) -fPIC -c $(INCLUDES) $(PYINC) -o $@ $<
 
 memoire.so: $(ROOT)/memoire.cpp msg.pb.o $(PROTOBUF_STATIC)
-	$(CXX) $(CXXFLAGS) -fPIC -shared $(PYINC) $(INCLUDES) -o $@ $^ $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -fPIC -shared $(INCLUDES) $(PYINC) -o $@ $^ $(LDFLAGS)
 
 clean:
 	-rm -f $(ALL)

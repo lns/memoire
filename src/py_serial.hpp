@@ -1,6 +1,7 @@
+#pragma once
+
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
-
 #include "buffer_view.hpp"
 
 namespace py = pybind11;
@@ -9,8 +10,8 @@ using namespace py::literals;
 typedef py::array_t<float, py::array::c_style> pyarr_float;
 typedef py::array_t<uint8_t, py::array::c_style> pyarr_uint8;
 
-BufView AS_BV(py::buffer b) {
-  py::buffer_info info = b.request();
+BufView AS_BV(py::object b) {
+  py::buffer_info info = py::cast<py::buffer>(b).request();
   return BufView(info.ptr, info.itemsize, info.format, info.shape, info.strides);
 }
 
@@ -153,11 +154,16 @@ py::object descr_unserialize_from_mem(py::object descr, void* head, size_t& offs
     for(unsigned i=0; i<l.size(); i++) {
       ret.append(descr_unserialize_from_mem(l[i], head, offset));
     }
-    return ret;
+    return py::tuple(ret);
   }
   else {
     throw std::runtime_error("Invalid descr.\n");
   }
+}
+
+py::object descr_unserialize_from_mem(py::object descr, void* head) {
+  size_t offset = 0;
+  return descr_unserialize_from_mem(descr, head, offset);
 }
 
 py::object descr_unserialize(pyarr_uint8 b, py::object descr) {

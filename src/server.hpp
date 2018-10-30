@@ -8,6 +8,7 @@
 #include "replay_memory.hpp"
 #include "hexdump.hpp"
 #include <arpa/inet.h>
+#include "py_serial.hpp"
 
 template<class RM>
 class ReplayMemoryServer : public non_copyable {
@@ -15,26 +16,26 @@ public:
   RM rem;
   void * ctx;
 
-  std::string x_descr_pickle;
+  const std::string x_descr_pickle;
   std::unordered_map<std::string, uint32_t> m;
 
   ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
-      qlib::RNG * prt_rng, std::string input_uuid)
-    : rem{vw, max_step, n_slot, prt_rng, input_uuid}, ctx{nullptr}
+      qlib::RNG * prt_rng, std::string input_uuid, std::string input_descr_pickle)
+    : rem{vw, max_step, n_slot, prt_rng, input_uuid},
+      ctx{nullptr},
+      x_descr_pickle{input_descr_pickle}
   {
     ctx = zmq_ctx_new(); qassert(ctx);
   }
 
-  ~ReplayMemoryServer() {
+  ~ReplayMemoryServer()
+  {
     zmq_ctx_destroy(ctx);
   }
 
-  void print_info(FILE * f = stderr) const
+protected:
+  uint32_t get_slot_index(std::string client_uuid)
   {
-    rem.print_info(f);
-  }
-
-  uint32_t get_slot_index(std::string client_uuid) {
     auto & iter = m.find(client_uuid);
     uint32_t slot_index;
     if(iter == m.end()) { // Not found
@@ -46,6 +47,12 @@ public:
     if(slot_index >= rem.slots.size())
       qlog_error("Insufficient number of slots (%lu) for these actors.", rem.slots.size());
     return slot_index;
+  }
+
+public:
+  void print_info(FILE * f = stderr) const
+  {
+    rem.print_info(f);
   }
  
   /**
@@ -118,6 +125,51 @@ public:
     }
     // never
     zmq_close(soc);
+  }
+
+  /**
+   * Unserialize an entry from memory
+   */
+  py::tuple py_unserialize_from_mem(void * data)
+  {
+    static py::object descr = pickle_loads(x_descr_pickle);
+    static size_t x_nbytes = get_descr_nbytes(descr);
+    // Unserialize from data: x
+    char * head = static_cast<char*>(data);
+    py::object x = descr_unserialize_from_mem(descr, head);
+    head += x_nbytes;
+    py::list entry = py::list(x);
+    for(int i=1; i<5; i++) { // r, p, v, q
+      const BufView& v = rem.view[i];
+      py::array a(py::dtype(v.format_), v.shape_, v.stride_, nullptr);
+      memcpy(a.mutable_data(), head, v.nbytes());
+      head += v.nbytes();
+      entry.append(a);
+    }
+    return py::tuple(entry);
+  }
+
+  /**
+   * Get data as a list
+   */
+  py::list py_get_data(uint32_t batch_size, uint32_t rollout_length)
+  {
+    Mem mem(batch_size * rollout_length * rem.entry_size);
+    if(true) {
+      py::gil_scoped_release release;
+      rem.get_data(mem.data(), batch_size, rollout_length);
+    }
+    py::list ret;
+    for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
+      py::list rollout;
+      for(uint32_t step=0; step<rollout_length; step++) {
+        char * head = (char*)mem.data() + (batch_idx * rollout_length + step) * rem.entry_size;
+        py::tuple entry = py_unserialize_from_mem(head);
+        rollout.append(entry);
+      }
+      ret.append(rollout);
+    }
+    return ret;
   }
 
 };
