@@ -165,7 +165,8 @@ public:
           if(i == len-1) // last
             prev_qvest[j] = (is_finished ? prev_reward[j] : data[prev].value(prm).as_array<float>()[j]);
           else
-            prev_qvest[j] = prev_reward[j] + prm->mix_lambda * gamma[j] * post_qvest[j] + (1-prm->mix_lambda) * gamma[j] * post_value[j];
+            prev_qvest[j] = prev_reward[j] + prm->mix_lambda * gamma[j] * post_qvest[j] +
+              (1-prm->mix_lambda) * gamma[j] * post_value[j];
         }
       }
     }
@@ -285,7 +286,7 @@ public:
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
-  uint32_t uuid;                     ///< uuid for current instance
+  std::string uuid;                  ///< uuid for current instance
 
 protected:
   std::deque<MemorySlot> slots;      ///< memory slots
@@ -309,7 +310,7 @@ public:
       size_t m_step,
       size_t n_slot,
       qlib::RNG * prt_rng,
-      uint32_t input_uuid = 0):
+      std::string input_uuid):
     view{
       BufView(nullptr, vw[0].itemsize_, vw[0].format_, vw[0].shape_, vw[0].stride_),
       BufView(nullptr, vw[1].itemsize_, vw[1].format_, vw[1].shape_, vw[1].stride_),
@@ -375,7 +376,7 @@ public:
 
   void print_info(FILE * f = stderr) const
   {
-    fprintf(f, "uuid:          0x%08x\n", uuid);
+    fprintf(f, "uuid:          %s\n",  uuid.c_str());
     fprintf(f, "bundle_buf:    %s\n",  bundle_buf().str().c_str());
     fprintf(f, "reward_buf:    %s\n",  reward_buf().str().c_str());
     fprintf(f, "prob_buf:      %s\n",  prob_buf().str().c_str());
@@ -398,8 +399,6 @@ public:
       fprintf(f, "%lf,", reward_coeff[i]);
     fprintf(f, "]\n");
   }
-
-protected:
 
 public:
   /**
@@ -433,37 +432,6 @@ public:
   }
 
 public:
-  /**
-   * Message protocal
-  class Message : public non_copyable
-  {
-  public:
-    static const int ProtocalSizes   = 32;  // REP,  REQ
-    static const int ProtocalCounter = 33;  // PUSH, PULL
-    static const int ProtocalLog     = 34;  // PUSH, PULL
-
-    uint64_t version;    // version control
-    int type;            // Message type
-    int length;          // length of payload (in bytes)
-    uint32_t sender;     // sender's uuid
-    float sum_weight;    // sum of weight, used by ProtocalCache
-    DataEntry payload;   // placeholder for actual payload. Note that sizeof(DataEntry) is 0.
-
-    bool check_version() const {
-      if(version != VERSION) {
-        qlog_warning("Message version (%lu) != expected VERSION (%lu)\n", version, VERSION);
-        return false;
-      }
-      return true;
-    }
-
-  };
-
-  static int reqbuf_size()  { return sizeof(Message); }
-  static int repbuf_size()  { return sizeof(Message) + N_VIEW * sizeof(BufView::Data) + sizeof(ReplayMemory); } // ProtocalSizes
-  static int pushbuf_size() { return sizeof(Message) + 2 * sizeof(long); }  // ProtocalCounter
-   */
-
   enum Mode {
     Conn = 0,
     Bind = 1,

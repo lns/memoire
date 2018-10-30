@@ -4,8 +4,9 @@
 
 #include <cstdio>
 #include "replay_memory.hpp"
+#include "client.hpp"
 //#include "server.hpp"
-//#include "client.hpp"
+#include "proxy.hpp"
 #include "py_serial.hpp"
 
 namespace py = pybind11;
@@ -57,6 +58,18 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("as_array", [](BV& self) {
         return py::array(py::dtype(self.format_), self.shape_, self.stride_, self.ptr_);
       })
+    ;
+
+  py::enum_<typename RM::Mode>(m, "Mode", py::arithmetic())
+    .value("Conn", RM::Conn)
+    .value("Bind", RM::Bind)
+    .export_values()
+    ;
+
+  py::class_<Proxy>(m, "Proxy")
+    .def("rep_proxy_main",   &Proxy::rep_proxy_main,   py::call_guard<py::gil_scoped_release>())
+    .def("pull_proxy_main",  &Proxy::pull_proxy_main,  py::call_guard<py::gil_scoped_release>())
+    .def("pub_proxy_main",   &Proxy::pub_proxy_main,   py::call_guard<py::gil_scoped_release>())
     ;
 
 /*
@@ -163,12 +176,6 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         }
         return entry;
       })
-    ;
-
-  py::enum_<typename RM::Mode>(m, "Mode", py::arithmetic())
-    .value("Conn", RM::Conn)
-    .value("Bind", RM::Bind)
-    .export_values()
     ;
 
   py::class_<RMC>(m, "ReplayMemoryClient")

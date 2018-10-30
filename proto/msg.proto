@@ -30,18 +30,18 @@ message ReqGetInfo {
 }
 
 message RepGetInfo {
-  repeated bytes x_descr_pickle = 11;
+  required bytes x_descr_pickle = 11;
   required uint32 slot_index = 21;
+  required uint32 entry_size = 22;
   repeated BufView view = 31;
 }
 
 message PushData {
-  required bool is_new_episode = 1; // actually, this is redundant.
-  required bool is_episode_end = 2;
-  required uint32 start_step = 3;
-  required uint32 n_step = 4;
-  required uint32 slot_index = 5;
-  repeated bytes data = 6;
+  required bool is_episode_end = 1;
+  required uint32 start_step = 2;
+  required uint32 n_step = 3;
+  required uint32 slot_index = 4;
+  required bytes data = 10;
 }
 
 message ReqNewMatch {
@@ -59,14 +59,14 @@ message ReqGetModel {
 
 message RepGetModel {
   required uint64 model_id = 1;
-  repeated bytes model_data = 2;
+  required bytes model_data = 2;
 }
 
 message ReqMatchRes {
-  repeated bytes match_name = 1;  // What match
-  repeated bytes match_site = 2;  // Where is the match
-  repeated bytes match_time = 3;  // When happened
-  repeated bytes match_info = 4;  // How is the match
+  required string match_name = 1;  // What match
+  required string match_site = 2;  // Where is the match
+  required string match_time = 3;  // When happened
+  required string match_info = 4;  // How is the match
   required uint32 round = 5;
   repeated uint64 players = 6;
   required int32 result = 7;
@@ -89,8 +89,8 @@ message Msg {
   }
   required MsgType type = 99;  // What type of message
 
-  optional bytes version = 100 [default='0.1.0'];// Version of protocal interface
-  optional bytes sender = 101;  // Sender's uuid
+  optional string version = 100 [default='0.1.0'];// Version of protocal interface
+  optional string sender = 101;  // Sender's uuid
   optional string error = 102;  // error message
 };
 
