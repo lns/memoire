@@ -15,7 +15,7 @@ public:
 
   std::string req_endpoint;
   std::string push_endpoint;
-  std::string client_uuid;
+  std::string uuid;
 
   uint32_t start_step;
 
@@ -37,7 +37,7 @@ public:
     : remote_slot_index{~0u},
       req_endpoint{req_ep},
       push_endpoint{push_ep},
-      client_uuid{input_uuid},
+      uuid{input_uuid},
       start_step{0}
   {
     ctx = zmq_ctx_new(); qassert(ctx);
@@ -60,12 +60,12 @@ public:
     proto::Msg req;
     req.set_type(proto::REQ_GET_INFO);
     req.set_version(req.version());
-    req.set_sender(client_uuid);
+    req.set_sender(uuid);
     req.SerializeToString(&reqbuf);
     do {
       int size;
       ZMQ_CALL(zmq_send(soc, reqbuf.data(), reqbuf.size(), 0));
-      ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
+      ZMQ_CALL(size = zmq_recv(soc, &repbuf[0], repbuf.size(), 0));
       if(not (size <= (int)repbuf.size())) { // resize and wait for next
         repbuf.resize(size);
         qlog_warning("Resize repbuf to %lu. Resending.. \n", repbuf.size());
@@ -77,7 +77,7 @@ public:
     qassert(rep.version() == req.version());
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
-    proto::RepGetInfo& info = rep.rep_get_info();
+    const proto::RepGetInfo& info = rep.rep_get_info();
     x_descr_pickle = info.x_descr_pickle();
     remote_slot_index = info.slot_index();
     entry_size = info.entry_size();
@@ -98,7 +98,7 @@ public:
     proto::Msg push;
     push.set_type(proto::PUSH_DATA);
     push.set_version(push.version()); // TODO(qing): check this
-    push.set_sender(client_uuid);
+    push.set_sender(uuid);
     auto * d = push.mutable_push_data();
     d->set_is_episode_end(is_episode_end);
     d->set_start_step(start_step);

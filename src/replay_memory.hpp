@@ -219,9 +219,9 @@ public:
       return update_weight(prm, epi.offset, epi.length);
     }
 
-    void add_data(ReplayMemory * prm, void * raw_data, uint32_t n_step, bool is_new_episode, bool is_episode_end) {
+    void add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
       // Check stage
-      if(is_new_episode) {
+      if(start_step == 0) {
         qassert(stage == 0);
         new_offset = get_new_offset();
         new_length = 0;
@@ -230,6 +230,7 @@ public:
       }
       else
         qassert(stage == 10);
+      qassert(start_step == cur_step);
       // Check space
       while(!episode.empty() and (new_length + n_step) > get_new_length()) {
         //qlog_info("new_length: %ld, get_new_length: %ld\n", new_length, get_new_length());
@@ -404,9 +405,9 @@ public:
   /**
    * Add sequential data into the replay memory.
    */
-  void add_data(uint32_t slot_index, void * raw_data, uint32_t n_step, bool is_new_episode, bool is_episode_end) {
+  void add_data(uint32_t slot_index, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
     qassert(slot_index < slots.size());
-    slots[slot_index].add_data(this, raw_data, n_step, is_new_episode, is_episode_end);
+    slots[slot_index].add_data(this, raw_data, start_step, n_step, is_episode_end);
   }
 
   /**

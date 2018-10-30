@@ -5,7 +5,7 @@
 #include <cstdio>
 #include "replay_memory.hpp"
 #include "client.hpp"
-//#include "server.hpp"
+#include "server.hpp"
 #include "proxy.hpp"
 #include "py_serial.hpp"
 
@@ -32,18 +32,12 @@ static qlib::LCG64 lcg64;
 PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire, a distributed prioritized replay memory";
 
-  /*
   m.def("get_descr", &get_descr);
   m.def("get_descr_nbytes", &get_descr_nbytes);
   m.def("descr_serialize", &descr_serialize);
-  m.def("get_buf_descr_1", &get_buf_descr_1);
-  m.def("get_buf_descr_2", &get_buf_descr_2);
   m.def("descr_unserialize", &descr_unserialize);
-  m.def("descr_unserialize_1", &descr_unserialize_1);
-  m.def("descr_unserialize_2", &descr_unserialize_2);
   m.def("pickle_dumps", &pickle_dumps);
   m.def("pickle_loads", &pickle_loads);
-  */
 
   py::class_<BV>(m, "BufView")
     .def_readonly("ptr", &BV::ptr_)
@@ -64,6 +58,32 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .value("Conn", RM::Conn)
     .value("Bind", RM::Bind)
     .export_values()
+    ;
+
+  py::class_<RMC>(m, "ReplayMemoryClient")
+    .def(py::init<const std::string&, const std::string&, const std::string&>(),
+        "req_endpoint"_a, "push_endpoint"_a, "input_uuid"_a)
+    .def_readonly("x_descr_pickle", &RMC::x_descr_pickle)
+    .def_readonly("remote_slot_index", &RMC::remote_slot_index)
+    .def_readonly("entry_size", &RMC::entry_size)
+    .def_readonly("view", &RMC::view)
+    .def_readonly("req_endpoint", &RMC::req_endpoint)
+    .def_readonly("push_endpoint", &RMC::push_endpoint)
+    .def_readonly("uuid", &RMC::uuid)
+    .def("get_info", &RMC::get_info, py::call_guard<py::gil_scoped_release>())
+    .def("push_data", [](RMC& rmc, py::list data, bool is_episode_end) {
+        uint32_t n_step = data.size();
+        if(rmc.x_descr_pickle == "")
+          qlog_error("x_descr_pickle not initialied. Please call get_info() first.\n");
+        static py::object descr = pickle_loads(py::bytes(rmc.x_descr_pickle));
+        Mem mem(rmc.entry_size * n_step);
+        for(unsigned i=0; i<n_step; i++)
+          qassert(rmc.entry_size == descr_serialize_to_mem(data[i], descr, (char*)mem.data() + i * rmc.entry_size));
+        if(true) {
+          py::gil_scoped_release release;
+          rmc.push_data(mem.data(), n_step, is_episode_end);
+        }
+      }, "data"_a, "is_episode_end"_a)
     ;
 
   py::class_<Proxy>(m, "Proxy")
@@ -176,24 +196,6 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         }
         return entry;
       })
-    ;
-
-  py::class_<RMC>(m, "ReplayMemoryClient")
-    .def(py::init<const std::string&, const std::string&, const std::string&, uint32_t>(),
-        "sub_endpoint"_a, "req_endpoint"_a, "push_endpoint"_a, "input_uuid"_a=0)
-    .def_readonly("rem", &RMC::prm)
-    .def("sync_sizes",     &RMC::sync_sizes,     py::call_guard<py::gil_scoped_release>())
-    .def("update_counter", &RMC::update_counter, py::call_guard<py::gil_scoped_release>())
-    .def("push_cache",     &RMC::push_cache,     py::call_guard<py::gil_scoped_release>())
-    .def("write_log",      &RMC::write_log,      py::call_guard<py::gil_scoped_release>())
-    .def("sub_bytes", [](RMC& rmc, std::string topic) {
-        std::string ret;
-        if(true) {
-          py::gil_scoped_release release;
-          ret = rmc.sub_bytes(topic);
-        }
-        return py::bytes(ret);
-      }, "topic"_a)
     ;
 
   py::class_<RMS>(m, "ReplayMemoryServer")

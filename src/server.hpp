@@ -49,7 +49,7 @@ public:
   }
  
   /**
-   * Responsible for answering the request of GetSizes.
+   * Responsible for answering ReqGetInfo
    */
   void rep_worker_main(const char * endpoint, typename RM::Mode mode)
   {
@@ -72,13 +72,46 @@ public:
       qassert(req.version() == rep.version());
       rep.set_version(req.version());
       if(req.type() == proto::REQ_GET_INFO) {
-        auto * p = rep.set_rep_get_info();
+        auto * p = rep.mutable_rep_get_info();
         p->set_x_descr_pickle(x_descr_pickle);
         p->set_slot_index(get_slot_index(req.sender()));
         p->set_entry_size(rem.entry_size);
         p->clear_view();
         for(int i=0; i<N_VIEW; i++)
           rem.view[i].to_pb(p->add_view()); 
+      }
+      else
+        qthrow("Unknown args->type");
+    }
+    // never
+    zmq_close(soc);
+  }
+
+  /**
+   * Responsible for receiving PushData
+   */
+  void pull_worker_main(const char * endpoint, typename RM::Mode mode)
+  {
+    void * soc = zmq_socket(ctx, ZMQ_PULL); qassert(soc);
+    std::string buf(1024); // TODO(qing): adjust default size
+    if(mode == RM::Bind)
+      ZMQ_CALL(zmq_bind(soc, endpoint));
+    else if(mode == RM::Conn)
+      ZMQ_CALL(zmq_connect(soc, endpoint));
+    int size;
+    while(true) {
+      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0));
+      if(not (size <= (int)buf.size())) { // resize and wait for next
+        buf.resize(size);
+        qlog_warning("Resize buf to %lu. Waiting for next push.. \n", buf.size());
+        continue;
+      }
+      proto::Msg msg;
+      msg.ParseFromString(buf);
+      qassert(msg.version() == msg.version());
+      if(msg.type() == proto::PUSH_DATA) {
+        auto * p = msg.push_data();
+        rem.add_data(p->slot_index(), p->data(), p->start_step(), p->n_step(), p->is_episode_end());
       }
       else
         qthrow("Unknown args->type");
