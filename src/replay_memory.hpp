@@ -429,10 +429,11 @@ public:
    */
   void get_data(void * raw_data, uint32_t batch_size, uint32_t rollout_length) {
     qassert(post_skip+1 >= rollout_length); // or else, you should increase post_skip or decrease rollout_length
+    qassert(rollout_length <= max_step);
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
       std::unique_lock<std::mutex> lock(rem_mutex);
       if(slot_prt.get_weight_sum() <= 0) {
-        qlog_warning("Waiting for data.\n");
+        qlog_info("get_data(): Waiting for data.\n");
         not_empty.wait(lock, [this](){ return slot_prt.get_weight_sum() > 0; });
       }
       // Sample the first entry
@@ -442,9 +443,17 @@ public:
         std::lock_guard<std::mutex> guard(slots[slot_index].slot_mutex);
         uint32_t entry_idx = slots[slot_index].prt.sample_index();
         // Copy to raw_data
-        void * dst = static_cast<char*>(raw_data) + batch_idx * rollout_length * entry_size;
+        char * dst = static_cast<char*>(raw_data) + batch_idx * rollout_length * entry_size;
         void * src = slots[slot_index][entry_idx].data();
-        memcpy(dst, src, rollout_length * entry_size);
+        if(entry_idx + rollout_length > max_step) {
+          long len = max_step - entry_idx;
+          memcpy(dst, src, len * entry_size);
+          dst += len * entry_size;
+          src = slots[slot_index][0].data();
+          memcpy(dst, src, (rollout_length - len) * entry_size);
+        }
+        else
+          memcpy(dst, src, rollout_length * entry_size);
       }
     }
   }
