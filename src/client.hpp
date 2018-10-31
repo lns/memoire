@@ -5,9 +5,10 @@
 #include "qlog.hpp"
 #include "msg.pb.h"
 #include "py_serial.hpp"
+#include "zmq_base.hpp"
 
 template<class RM>
-class ReplayMemoryClient : public non_copyable {
+class ReplayMemoryClient : public ZMQBase {
 public:
   std::string x_descr_pickle;
   uint32_t remote_slot_index;
@@ -19,11 +20,6 @@ public:
   std::string uuid;
 
   uint32_t start_step;
-
-protected:
-  // ZeroMQ socket is not thread-safe, so a socket should only
-  // be used by a single thread at the same time.
-  void * ctx;
 
 public:
   /**
@@ -40,20 +36,16 @@ public:
       push_endpoint{push_ep},
       uuid{input_uuid},
       start_step{0}
-  {
-    ctx = zmq_ctx_new(); qassert(ctx);
-  }
+  {}
 
-  ~ReplayMemoryClient() {
-    zmq_ctx_destroy(ctx);
-  }
+  ~ReplayMemoryClient() {}
 
   void get_info() {
     thread_local void * soc = nullptr;
     thread_local std::string reqbuf;
     thread_local std::string repbuf;
     if(not soc) {
-      qassert(soc = zmq_socket(ctx, ZMQ_REQ));
+      soc = new_zmq_socket(ZMQ_REQ);
       ZMQ_CALL(zmq_connect(soc, req_endpoint.c_str()));
       reqbuf.resize(1024, '\0');
       repbuf.resize(1024, '\0'); // TODO(qing): adjust default size
@@ -66,6 +58,7 @@ public:
     do {
       int size;
       ZMQ_CALL(zmq_send(soc, reqbuf.data(), reqbuf.size(), 0));
+      qlog_debug("Send msg.. %s\n", req.DebugString().c_str()); 
       ZMQ_CALL(size = zmq_recv(soc, &repbuf[0], repbuf.size(), 0));
       if(not (size <= (int)repbuf.size())) { // resize and wait for next
         repbuf.resize(size);
@@ -75,6 +68,7 @@ public:
     } while(false);
     proto::Msg rep;
     rep.ParseFromString(repbuf);
+    qlog_debug("Received msg.. %s\n", rep.DebugString().c_str()); 
     qassert(rep.version() == req.version());
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
@@ -92,7 +86,7 @@ public:
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
     if(not soc) {
-      qassert(soc = zmq_socket(ctx, ZMQ_PUSH));
+      soc = new_zmq_socket(ZMQ_PUSH);
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(1024, '\0');
     }
@@ -107,43 +101,42 @@ public:
     d->set_slot_index(remote_slot_index);
     d->set_data(data, n_step * entry_size);
     push.SerializeToString(&pushbuf);
-    do {
-      ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
-    } while(false);
+    qlog_debug("Send msg.. %s\n", push.DebugString().c_str()); 
+    ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     if(is_episode_end)
       start_step = 0;
     else
       start_step += n_step;
   }
 
-  void py_serialize_entry_to_mem(py::tuple entry, void * data) {
+  void py_serialize_entry_to_mem(py::tuple entry, void * data) const {
     if(x_descr_pickle == "")
       qlog_error("x_descr_pickle not initialied. Please call get_info() first.\n");
     qassert(view.size() == 5);
-    static py::object descr = pickle_loads(py::bytes(x_descr_pickle));
     char * head = static_cast<char*>(data);
     // x
+    static py::object descr = pickle_loads(py::bytes(x_descr_pickle)); 
     head += descr_serialize_to_mem(py::list(entry)[py::slice(0,-3,1)], descr, head);
     if(true) { // r
-      BufView v = AS_BV(entry[-3]);
+      BufView v = AS_BV(entry[entry.size()-3]);
       qassert(v.is_consistent_with(view[1]) or "Shape of r mismatch");
       v.to_memory(head);
       head += v.nbytes();
     }
     if(true) { // p
-      BufView v = AS_BV(entry[-2]);
+      BufView v = AS_BV(entry[entry.size()-2]);
       qassert(v.is_consistent_with(view[2]) or "Shape of p mismatch");
       v.to_memory(head);
       head += v.nbytes();
     }
     if(true) { // v
-      BufView v = AS_BV(entry[-1]);
+      BufView v = AS_BV(entry[entry.size()-1]);
       qassert(v.is_consistent_with(view[3]) or "Shape of v mismatch");
       v.to_memory(head);
       head += v.nbytes();
     }
     if(true) { // q
-      BufView v = AS_BV(entry[-1]);
+      BufView v = AS_BV(entry[entry.size()-1]);
       qassert(v.is_consistent_with(view[4]) or "Shape of q mismatch");
       v.to_memory(head); // reuse data from v
       head += v.nbytes();

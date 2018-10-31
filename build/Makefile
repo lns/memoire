@@ -1,17 +1,17 @@
 # makefile
 
 ROOT=..
-ENABLE_DEBUG=0
+ENABLE_DEBUG=1
 PYBIND11_ROOT=$(HOME)/ext/pybind11
 # libprotobuf.a should be compiled with CXXFLAGS=-fPIC, or the compilation of memoire.so
 # may fail with a relocation error. ("..can not be used when making a shared object;")
 PROTOBUF_STATIC=/usr/local/lib/libprotobuf.a
 
 CXX=g++
-CXXFLAGS=-std=c++11 -O3 -Wall
+CXXFLAGS=-std=c++11 -O3 -Wall -fvisibility=hidden
 
 ifeq ($(ENABLE_DEBUG),1)
-	BACKWARD_MACRO=-DBACKWARD_HAS_BFD=1 -g -DTIME_CONNECTION
+	BACKWARD_MACRO=-DBACKWARD_HAS_BFD=1 -g -DPRINT_DEBUG
 	BACKWARD_LD=-lbfd
 else
 	BACKWARD_MACRO=#-DNDEBUG
@@ -29,14 +29,17 @@ PYINC=`python -m pybind11 --includes`
 INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include -I$(ROOT)/proto -I$(PYBIND11_ROOT)/include 
 LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
-ALL=memoire.so msg.pb.o
+ALL=memoire.so memoire.o msg.pb.o
 
 all: $(ALL)
 
 msg.pb.o: $(ROOT)/proto/msg.pb.cc $(ROOT)/proto/*.proto
 	$(CXX) $(CXXFLAGS) -fPIC -c $(INCLUDES) $(PYINC) -o $@ $<
 
-memoire.so: $(ROOT)/memoire.cpp msg.pb.o $(PROTOBUF_STATIC)
+memoire.o: $(ROOT)/memoire.cpp $(ROOT)/src/* $(ROOT)/include/*
+	$(CXX) $(CXXFLAGS) -fPIC -c $(INCLUDES) $(PYINC) -o $@ $<
+
+memoire.so: memoire.o msg.pb.o $(PROTOBUF_STATIC)
 	$(CXX) $(CXXFLAGS) -fPIC -shared $(INCLUDES) $(PYINC) -o $@ $^ $(LDFLAGS)
 
 clean:

@@ -9,34 +9,27 @@
 #include "hexdump.hpp"
 #include <arpa/inet.h>
 #include "py_serial.hpp"
+#include "zmq_base.hpp"
 
 template<class RM>
-class ReplayMemoryServer : public non_copyable {
+class ReplayMemoryServer : public ZMQBase {
 public:
   RM rem;
-  void * ctx;
-
   const std::string x_descr_pickle;
   std::unordered_map<std::string, uint32_t> m;
 
   ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
       qlib::RNG * prt_rng, std::string input_uuid, std::string input_descr_pickle)
     : rem{vw, max_step, n_slot, prt_rng, input_uuid},
-      ctx{nullptr},
       x_descr_pickle{input_descr_pickle}
-  {
-    ctx = zmq_ctx_new(); qassert(ctx);
-  }
+  {}
 
-  ~ReplayMemoryServer()
-  {
-    zmq_ctx_destroy(ctx);
-  }
+  ~ReplayMemoryServer() {}
 
 protected:
   uint32_t get_slot_index(std::string client_uuid)
   {
-    auto & iter = m.find(client_uuid);
+    auto iter = m.find(client_uuid);
     uint32_t slot_index;
     if(iter == m.end()) { // Not found
       slot_index = m.size();
@@ -44,8 +37,8 @@ protected:
     } else {
       slot_index = m[client_uuid];
     }
-    if(slot_index >= rem.slots.size())
-      qlog_error("Insufficient number of slots (%lu) for these actors.", rem.slots.size());
+    if(slot_index >= rem.num_slot())
+      qlog_error("Insufficient number of slots (%lu) for these actors.", rem.num_slot());
     return slot_index;
   }
 
@@ -60,15 +53,15 @@ public:
    */
   void rep_worker_main(const char * endpoint, typename RM::Mode mode)
   {
-    void * soc = zmq_socket(ctx, ZMQ_REP); qassert(soc);
-    std::string reqbuf(1024), repbuf(1024); // TODO(qing): adjust default size
+    void * soc = new_zmq_socket(ZMQ_REP);
+    std::string reqbuf(1024, '\0'), repbuf(1024, '\0'); // TODO(qing): adjust default size
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int size;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, reqbuf.data(), reqbuf.size(), 0));
+      ZMQ_CALL(size = zmq_recv(soc, &reqbuf[0], reqbuf.size(), 0));
       if(not (size <= (int)reqbuf.size())) { // resize and wait for next
         reqbuf.resize(size);
         qlog_warning("Resize reqbuf to %lu. Waiting for next request.. \n", reqbuf.size());
@@ -76,9 +69,11 @@ public:
       }
       proto::Msg req, rep;
       req.ParseFromString(reqbuf);
+      qlog_debug("Received msg: %s\n", req.DebugString().c_str());
       qassert(req.version() == rep.version());
       rep.set_version(req.version());
       if(req.type() == proto::REQ_GET_INFO) {
+        rep.set_type(proto::REP_GET_INFO);
         auto * p = rep.mutable_rep_get_info();
         p->set_x_descr_pickle(x_descr_pickle);
         p->set_slot_index(get_slot_index(req.sender()));
@@ -89,9 +84,10 @@ public:
       }
       else
         qthrow("Unknown args->type");
+      rep.SerializeToString(&repbuf);
+      ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
+      qlog_debug("Send msg: %s\n", rep.DebugString().c_str());
     }
-    // never
-    zmq_close(soc);
   }
 
   /**
@@ -99,15 +95,15 @@ public:
    */
   void pull_worker_main(const char * endpoint, typename RM::Mode mode)
   {
-    void * soc = zmq_socket(ctx, ZMQ_PULL); qassert(soc);
-    std::string buf(1024); // TODO(qing): adjust default size
+    void * soc = new_zmq_socket(ZMQ_PULL);
+    std::string buf(1024, '\0'); // TODO(qing): adjust default size
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int size;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, buf.data(), buf.size(), 0));
+      ZMQ_CALL(size = zmq_recv(soc, &buf[0], buf.size(), 0));
       if(not (size <= (int)buf.size())) { // resize and wait for next
         buf.resize(size);
         qlog_warning("Resize buf to %lu. Waiting for next push.. \n", buf.size());
@@ -115,16 +111,15 @@ public:
       }
       proto::Msg msg;
       msg.ParseFromString(buf);
+      qlog_debug("Received msg: %s\n", msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
       if(msg.type() == proto::PUSH_DATA) {
-        auto * p = msg.push_data();
-        rem.add_data(p->slot_index(), p->data(), p->start_step(), p->n_step(), p->is_episode_end());
+        auto * p = msg.mutable_push_data();
+        rem.add_data(p->slot_index(), (void*)p->data().data(), p->start_step(), p->n_step(), p->is_episode_end());
       }
       else
         qthrow("Unknown args->type");
     }
-    // never
-    zmq_close(soc);
   }
 
   /**

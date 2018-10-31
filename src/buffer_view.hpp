@@ -155,7 +155,7 @@ public:
   /**
    * Copy to a Protocal Buffer
    */
-  void to_pb(proto::BufView * pb) {
+  void to_pb(proto::BufView * pb) const {
     qassert(pb);
     pb->set_itemsize(itemsize_);
     pb->set_format(format_);

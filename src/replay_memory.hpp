@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 #include <queue>
 #include "qlog.hpp"
 #include "qtime.hpp"
@@ -11,6 +12,8 @@
 #include "qrand.hpp"
 //#include <signal.h>
 #include "utils.hpp" // non_copyable
+#include <thread>
+#include <chrono>
 #include "prt_tree.hpp"
 #include "buffer_view.hpp"
 
@@ -126,16 +129,12 @@ public:
      * Remove oldest episode from memory
      */
     void remove_oldest(ReplayMemory * prm) {
-      std::lock_guard<std::mutex> guard(slot_mutex);
       if(episode.empty())
         qthrow("episode is empty.");
       // clear priority
       // TODO: Optimize this
       const auto& front = episode.front();
-      for(int i=0; i<front.length; i++) {
-        long idx = (front.offset + i) % data.capacity();
-        prt.set_weight(idx, 0);
-      }
+      clear_priority(front.offset, front.length);
       // pop episode
       episode.pop();
       if(true) {
@@ -178,7 +177,6 @@ public:
      * Update weight in an episode.
      */
     void update_weight(ReplayMemory * prm, long off, long len) {
-      std::lock_guard<std::mutex> guard(slot_mutex);
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
@@ -219,10 +217,24 @@ public:
       return update_weight(prm, epi.offset, epi.length);
     }
 
+    void clear_priority(long offset, long len) {
+      // TODO: Optimize this
+      qassert(len >= 0);
+      for(int i=0; i<len; i++) {
+        long idx = (offset + i) % data.capacity();
+        prt.set_weight(idx, 0);
+      }
+    }
+
     void add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
+      std::lock_guard<std::mutex> guard(slot_mutex);
       // Check stage
       if(start_step == 0) {
-        qassert(stage == 0);
+        if(stage != 0) {
+          // Clear data
+          qlog_warning("Discard unfinished episode (offset:%ld, len:%ld) in slot %u.\n", new_offset, new_length, self_index);
+          clear_priority(new_offset, new_length);
+        }
         new_offset = get_new_offset();
         new_length = 0;
         cur_step = 0;
@@ -236,24 +248,18 @@ public:
         //qlog_info("new_length: %ld, get_new_length: %ld\n", new_length, get_new_length());
         remove_oldest(prm);
       }
-      // Check for max_step
-      if(new_length == (long)data.capacity()) {
-        if(true) {
-          // clear priority
-          // TODO: Optimize this
-          std::lock_guard<std::mutex> guard(slot_mutex);
-          for(int i=0; i<(long)n_step; i++) {
-            long idx = (new_offset + i) % data.capacity();
-            prt.set_weight(idx, 0);
-          }
-        }
-        new_offset = (new_offset + n_step) % data.capacity();
-        new_length -= n_step;
-      }
-      qassert(new_length + n_step <= get_new_length());
+      char * mem_data = static_cast<char*>(raw_data);
       long idx = (new_offset + new_length) % data.capacity();
-      memcpy(&data[idx] ,raw_data, n_step * data.entry_size); // TODO: Overflow ?
-      new_length += n_step;
+      long len_to_write = n_step;
+      while(len_to_write > 0) {
+        long len = std::min<long>(len_to_write, data.capacity() - idx);
+        memcpy(&data[idx], mem_data, len * data.entry_size);
+        idx = (idx + len) % data.capacity();
+        mem_data += len * data.entry_size;
+        len_to_write -= len;
+      }
+      new_length = std::min<long>(new_length + n_step, data.capacity());
+      new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
       prm->incre_step += n_step;
       qassert(new_length <= get_new_length());
@@ -267,7 +273,7 @@ public:
       }
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end);
-      update_weight(prm, new_offset, new_length); // with lock
+      update_weight(prm, new_offset, new_length);
     }
 
   };
@@ -293,6 +299,7 @@ protected:
   std::deque<MemorySlot> slots;      ///< memory slots
   PrtTree slot_prt;                  ///< Priority tree for sampling a slot
   std::mutex rem_mutex;              ///< mutex for the replay memory
+  std::condition_variable not_empty; ///< condition variable for not empty
 public:
   qlib::RNG * rng;                   ///< random number generator
   float ma_sqa;                      ///< moving average estimation of squared advantage
@@ -384,6 +391,7 @@ public:
     fprintf(f, "value_buf:     %s\n",  value_buf().str().c_str());
     fprintf(f, "qvest_buf:     %s\n",  qvest_buf().str().c_str());
     fprintf(f, "max_step:      %lu\n", max_step);
+    fprintf(f, "num_slot:      %lu\n", num_slot());
     fprintf(f, "max_episode:   %lu\n", max_episode);
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
@@ -401,6 +409,8 @@ public:
     fprintf(f, "]\n");
   }
 
+  size_t num_slot() const { return slots.size(); }
+
 public:
   /**
    * Add sequential data into the replay memory.
@@ -408,19 +418,26 @@ public:
   void add_data(uint32_t slot_index, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
     qassert(slot_index < slots.size());
     slots[slot_index].add_data(this, raw_data, start_step, n_step, is_episode_end);
+    not_empty.notify_one();
   }
 
   /**
    * Get batch_size * rollout data samples. Currently this is sampling with replacement.
-   * TODO(qing) sampling without replacement, wait for data with a condition variable.
+   * TODO(qing) sampling without replacement.
    * TODO(qing) should we use average priority over rollout for sampling?
-   * TODO(qing) sampling with slot_prt should be protected by rem_mutex, which results in dead-lock possibly.
+   * TODO(qing) save entry sampling weight
    */
   void get_data(void * raw_data, uint32_t batch_size, uint32_t rollout_length) {
-    qassert(post_skip+1 > rollout_length); // or else, you should increase post_skip or decrease rollout_length
+    qassert(post_skip+1 >= rollout_length); // or else, you should increase post_skip or decrease rollout_length
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
+      std::unique_lock<std::mutex> lock(rem_mutex);
+      if(slot_prt.get_weight_sum() <= 0) {
+        qlog_warning("Waiting for data.\n");
+        not_empty.wait(lock, [this](){ return slot_prt.get_weight_sum() > 0; });
+      }
       // Sample the first entry
       uint32_t slot_index = slot_prt.sample_index();
+      lock.unlock();
       if(true) {
         std::lock_guard<std::mutex> guard(slots[slot_index].slot_mutex);
         uint32_t entry_idx = slots[slot_index].prt.sample_index();

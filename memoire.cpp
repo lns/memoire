@@ -60,6 +60,29 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .export_values()
     ;
 
+  py::class_<RM>(m, "ReplayMemory")
+    .def_property_readonly("bundle_buf", &RM::bundle_buf)
+    .def_property_readonly("reward_buf", &RM::reward_buf)
+    .def_property_readonly("prob_buf",   &RM::prob_buf)
+    .def_property_readonly("value_buf",  &RM::value_buf)
+    .def_property_readonly("qvest_buf",  &RM::qvest_buf)
+    .def_property_readonly("num_slot",   &RM::num_slot)
+    .def_readonly("entry_size", &RM::entry_size)
+    .def_readonly("max_step", &RM::max_step)
+    .def_readonly("uuid", &RM::uuid)
+    .def_readonly("ma_sqa", &RM::ma_sqa)
+    .def_readonly("incre_episode", &RM::incre_episode)
+    .def_readonly("incre_step", &RM::incre_step)
+    .def_readwrite("max_episode", &RM::max_episode)
+    .def_readwrite("priority_exponent", &RM::priority_exponent)
+    .def_readwrite("mix_lambda", &RM::mix_lambda)
+    .def_readwrite("pre_skip", &RM::pre_skip)
+    .def_readwrite("post_skip", &RM::post_skip)
+    .def_readwrite("step_discount", &RM::step_discount)
+    .def_readwrite("discount_factor", &RM::discount_factor)
+    .def_readwrite("reward_coeff", &RM::reward_coeff)
+    ;
+ 
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const std::string&, const std::string&, const std::string&>(),
         "req_endpoint"_a, "push_endpoint"_a, "uuid"_a)
@@ -70,11 +93,13 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("req_endpoint", &RMC::req_endpoint)
     .def_readonly("push_endpoint", &RMC::push_endpoint)
     .def_readonly("uuid", &RMC::uuid)
+    .def("close", &RMC::close, py::call_guard<py::gil_scoped_release>())
     .def("get_info", &RMC::get_info, py::call_guard<py::gil_scoped_release>())
     .def("push_data", &RMC::py_push_data)
     ;
 
   py::class_<RMS>(m, "ReplayMemoryServer")
+    .def_readonly("rem", &RMS::rem)
     .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot, std::string uuid) {
         // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
         py::list x = py::list(entry)[py::slice(0,-3,1)];
@@ -83,13 +108,17 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         std::string x_descr_pickle = pickle_dumps(descr);
         BV view[N_VIEW];
         view[0] = AS_BV(bundle);
-        view[1] = AS_BV(entry[-3]); // r
-        view[2] = AS_BV(entry[-2]); // p
-        view[3] = AS_BV(entry[-1]); // v
-        view[4] = AS_BV(entry[-1]); // q
+        view[1] = AS_BV(entry[entry.size()-3]); // r
+        view[2] = AS_BV(entry[entry.size()-2]); // p
+        view[3] = AS_BV(entry[entry.size()-1]); // v
+        view[4] = AS_BV(entry[entry.size()-1]); // q
         return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,uuid,x_descr_pickle)));
       }), "entry"_a, "max_step"_a, "n_slot"_a, "uuid"_a)
+    .def("close", &RMS::close, py::call_guard<py::gil_scoped_release>())
     .def("get_data", &RMS::py_get_data)
+    .def("print_info", [](RMS& rms) { rms.print_info(stderr); }, py::call_guard<py::gil_scoped_release>())
+    .def("rep_worker_main",  &RMS::rep_worker_main,    py::call_guard<py::gil_scoped_release>())
+    .def("pull_worker_main", &RMS::pull_worker_main,   py::call_guard<py::gil_scoped_release>())
     ;
 
   py::class_<Proxy>(m, "Proxy")

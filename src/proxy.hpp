@@ -5,18 +5,14 @@
 #include <thread>
 #include <cstdlib>
 #include <functional>
+#include "zmq_base.hpp"
 
-class Proxy : public non_copyable {
+class Proxy : public ZMQBase {
 public:
-  void * ctx;
 
-  Proxy() : ctx{nullptr} {
-    ctx = zmq_ctx_new(); qassert(ctx);
-  }
+  Proxy() {}
 
-  ~Proxy() {
-    zmq_ctx_destroy(ctx);
-  }
+  ~Proxy() {}
 
   /**
    * Responsible for connecting multiple frontends and backends
@@ -31,8 +27,8 @@ public:
       typename RM::Mode back_mode,
       int back_hwm)
   {
-    void * front = zmq_socket(ctx, front_soc_type); qassert(front);
-    void * back  = zmq_socket(ctx,  back_soc_type); qassert(back);
+    void * front = new_zmq_socket(front_soc_type);
+    void * back  = new_zmq_socket( back_soc_type);
     ZMQ_CALL(zmq_setsockopt(front, ZMQ_SNDHWM, &front_hwm, sizeof(front_hwm)));
     ZMQ_CALL(zmq_setsockopt(front, ZMQ_RCVHWM, &front_hwm, sizeof(front_hwm)));
     ZMQ_CALL(zmq_setsockopt(back,  ZMQ_SNDHWM, &back_hwm,  sizeof(back_hwm)));
@@ -46,9 +42,6 @@ public:
     else if(back_mode == RM::Conn)
       ZMQ_CALL(zmq_connect(back, back_endpoint));
     ZMQ_CALL(zmq_proxy(front, back, nullptr));
-    // never
-    zmq_close(front);
-    zmq_close(back);
   }
 
   void rep_proxy_main(const char * front_ep, typename RM::Mode front_mode,

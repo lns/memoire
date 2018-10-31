@@ -34,7 +34,6 @@ protected:
   if(unlikely(-1==rc)) { \
     int e = zmq_errno(); \
     qlog_error("[%d]'%s' (rc: %d)\n", e, zmq_strerror(e), rc); \
-    throw std::runtime_error("ZeroMQ call failed."); \
   } \
 } while(0)
 #endif
