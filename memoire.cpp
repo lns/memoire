@@ -39,6 +39,9 @@ PYBIND11_MODULE(memoire /* module name */, m) {
   m.def("pickle_dumps", &pickle_dumps);
   m.def("pickle_loads", &pickle_loads);
 
+  m.def("get_host_ip", &get_host_ip);
+  m.def("get_pid", &getpid);
+
   py::class_<BV>(m, "BufView")
     .def_readonly("ptr", &BV::ptr_)
     .def_readonly("itemsize", &BV::itemsize_)
@@ -85,7 +88,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
  
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const std::string&, const std::string&, const std::string&>(),
-        "req_endpoint"_a, "push_endpoint"_a, "uuid"_a)
+        "uuid"_a, "req_endpoint"_a, "push_endpoint"_a)
     .def_readonly("x_descr_pickle", &RMC::x_descr_pickle)
     .def_readonly("remote_slot_index", &RMC::remote_slot_index)
     .def_readonly("entry_size", &RMC::entry_size)
@@ -100,7 +103,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
 
   py::class_<RMS>(m, "ReplayMemoryServer")
     .def_readonly("rem", &RMS::rem)
-    .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot, std::string uuid) {
+    .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot) {
         // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
         py::list x = py::list(entry)[py::slice(0,-3,1)];
         py::object descr = get_descr(x);
@@ -112,8 +115,8 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         view[2] = AS_BV(entry[entry.size()-2]); // p
         view[3] = AS_BV(entry[entry.size()-1]); // v
         view[4] = AS_BV(entry[entry.size()-1]); // q
-        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,uuid,x_descr_pickle)));
-      }), "entry"_a, "max_step"_a, "n_slot"_a, "uuid"_a)
+        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,x_descr_pickle)));
+      }), "entry"_a, "max_step"_a, "n_slot"_a)
     .def("close", &RMS::close, py::call_guard<py::gil_scoped_release>())
     .def("get_data", &RMS::py_get_data)
     .def("print_info", [](RMS& rms) { rms.print_info(stderr); }, py::call_guard<py::gil_scoped_release>())

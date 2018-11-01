@@ -2,6 +2,11 @@
 
 #include "zmq.h"
 #include "qlog.hpp"
+#include <sys/types.h>
+#include <unistd.h>
+#include <netinet/in.h> 
+#include <arpa/inet.h>
+#include <string>
 
 #ifndef MIN
 #define MIN(a,b) ((a)>(b)?(b):(a))
@@ -43,6 +48,41 @@ int64_t check_multipart(void * soc) {
   size_t more_size = sizeof(more);
   ZMQ_CALL(zmq_getsockopt(soc, ZMQ_RCVMORE, &more, &more_size));
   return more;
+}
+
+/**
+ * Get host ip
+ * @param ref_ip   reference ip for connection (e.g. "8.8.8.8")
+ * @param ref_port reference port for connection (e.g. 53 for DNS)
+ *
+ * See https://stackoverflow.com/a/3120382
+ */
+std::string get_host_ip(const char* ref_ip, uint16_t ref_port) 
+{
+  std::string ret(16, '\0');
+
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
+  assert(sock != -1);
+
+  struct sockaddr_in serv;
+  memset(&serv, 0, sizeof(serv));
+  serv.sin_family = AF_INET;
+  serv.sin_addr.s_addr = inet_addr(ref_ip);
+  serv.sin_port = htons(ref_port);
+
+  int err = connect(sock, (const sockaddr*) &serv, sizeof(serv));
+  assert(err != -1);
+
+  sockaddr_in name;
+  socklen_t namelen = sizeof(name);
+  err = getsockname(sock, (sockaddr*) &name, &namelen);
+  assert(err != -1);
+
+  const char* p = inet_ntop(AF_INET, &name.sin_addr, &ret[0], ret.size());
+  assert(p);
+
+  close(sock);
+  return ret;
 }
 
 #ifdef TIME_CONNECTION

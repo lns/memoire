@@ -310,15 +310,13 @@ public:
 public:
   /**
    * Construct a new replay memory
-   * @param e_size       size of a single entry (in bytes)
-   * @param max_epi      max number of episodes kept in the memory
-   * @param input_uuid   specified uuid, usually used for recording actor ip address
+   * @param m_step      max number of steps in a memory slot
+   * @param n_slot      number of slots in this replay memory
    */
   ReplayMemory(const BufView * vw,
       size_t m_step,
       size_t n_slot,
-      qlib::RNG * prt_rng,
-      std::string input_uuid):
+      qlib::RNG * prt_rng):
     view{
       BufView(nullptr, vw[0].itemsize_, vw[0].format_, vw[0].shape_, vw[0].stride_),
       BufView(nullptr, vw[1].itemsize_, vw[1].format_, vw[1].shape_, vw[1].stride_),
@@ -334,7 +332,6 @@ public:
     pre_skip{0},
     post_skip{0},
     step_discount{1.0},
-    uuid{input_uuid},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -353,6 +350,10 @@ public:
     reward_coeff.resize(reward_buf().size());
     for(auto&& each : reward_coeff)
       each = 1.0f;
+    // Get uuid
+    char buf[64];
+    snprintf(buf, 64, "RM::IP:%s,PID:%u,Ptr:%p", get_host_ip("8.8.8.8", 53).c_str(), getpid(), this);
+    uuid = std::string(buf);
   }
 
   void check() const {
@@ -425,9 +426,8 @@ public:
    * Get batch_size * rollout data samples. Currently this is sampling with replacement.
    * TODO(qing) sampling without replacement.
    * TODO(qing) should we use average priority over rollout for sampling?
-   * TODO(qing) save entry sampling weight
    */
-  void get_data(void * raw_data, uint32_t batch_size, uint32_t rollout_length) {
+  void get_data(void * raw_data, float * weight, uint32_t batch_size, uint32_t rollout_length) {
     qassert(post_skip+1 >= rollout_length); // or else, you should increase post_skip or decrease rollout_length
     qassert(rollout_length <= max_step);
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
@@ -454,6 +454,7 @@ public:
         }
         else
           memcpy(dst, src, rollout_length * entry_size);
+        weight[batch_idx] = slots[slot_index].prt.get_weight(entry_idx);
       }
     }
   }

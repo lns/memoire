@@ -15,9 +15,9 @@ public:
   uint32_t entry_size;
   std::vector<BufView> view;
 
+  std::string uuid;
   std::string req_endpoint;
   std::string push_endpoint;
-  std::string uuid;
 
   uint32_t start_step;
 
@@ -28,13 +28,13 @@ public:
    * endpoint can be set to nullptr or "" to disable this protocal
    */
   ReplayMemoryClient(
+      const std::string input_uuid,
       const std::string req_ep,
-      const std::string push_ep,
-      const std::string input_uuid)
+      const std::string push_ep)
     : remote_slot_index{~0u},
+      uuid{input_uuid},
       req_endpoint{req_ep},
       push_endpoint{push_ep},
-      uuid{input_uuid},
       start_step{0}
   {}
 

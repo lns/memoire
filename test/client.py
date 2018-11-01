@@ -5,9 +5,9 @@ import pickle, time
 from copy import deepcopy
 
 client = ReplayMemoryClient(
+    "client_test",
     "tcp://localhost:10101",
-    "tcp://localhost:10102",
-    "client_test")
+    "tcp://localhost:10102")
 
 client.get_info()
 print(pickle.loads(client.x_descr_pickle))

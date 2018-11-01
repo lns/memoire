@@ -19,8 +19,8 @@ public:
   std::unordered_map<std::string, uint32_t> m;
 
   ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
-      qlib::RNG * prt_rng, std::string input_uuid, std::string input_descr_pickle)
-    : rem{vw, max_step, n_slot, prt_rng, input_uuid},
+      qlib::RNG * prt_rng, std::string input_descr_pickle)
+    : rem{vw, max_step, n_slot, prt_rng},
       x_descr_pickle{input_descr_pickle}
   {}
 
@@ -145,14 +145,15 @@ public:
   }
 
   /**
-   * Get data as a list
+   * Get data and weight: (data, weight)
    */
-  py::list py_get_data(uint32_t batch_size, uint32_t rollout_length)
+  py::tuple py_get_data(uint32_t batch_size, uint32_t rollout_length)
   {
     Mem mem(batch_size * rollout_length * rem.entry_size);
+    pyarr_float w({batch_size,});
     if(true) {
       py::gil_scoped_release release;
-      rem.get_data(mem.data(), batch_size, rollout_length);
+      rem.get_data(mem.data(), w.mutable_data(), batch_size, rollout_length);
     }
     py::list ret;
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
@@ -164,7 +165,7 @@ public:
       }
       ret.append(rollout);
     }
-    return ret;
+    return py::make_tuple(ret, w);
   }
 
 };

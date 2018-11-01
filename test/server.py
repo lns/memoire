@@ -10,7 +10,7 @@ p = np.ndarray([], dtype=np.float32)
 v = np.ndarray([], dtype=np.float32)
 
 entry = (s,r,p,v)
-server = ReplayMemoryServer(entry, 4, 128, "server_test")
+server = ReplayMemoryServer(entry, 4, 128)
 server.rem.post_skip = 3
 server.print_info()
 
@@ -24,7 +24,9 @@ for th in threads:
 try:
   while True:
     time.sleep(1) # Catch KeyboardInterrupt
-    print(server.get_data(1,4))
+    data, weight = server.get_data(1,4)
+    print(data)
+    print(weight)
   server.close() # Prevent auto-deletion
 except KeyboardInterrupt:
   pass
