@@ -147,19 +147,19 @@ public:
   /**
    * Get data and weight: (data, weight)
    */
-  py::tuple py_get_data(uint32_t batch_size, uint32_t rollout_length)
+  py::tuple py_get_data(uint32_t batch_size)
   {
-    Mem mem(batch_size * rollout_length * rem.entry_size);
+    Mem mem(batch_size * rem.rollout_len * rem.entry_size);
     pyarr_float w({batch_size,});
     if(true) {
       py::gil_scoped_release release;
-      rem.get_data(mem.data(), w.mutable_data(), batch_size, rollout_length);
+      rem.get_data(mem.data(), w.mutable_data(), batch_size);
     }
     py::list ret;
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
       py::list rollout;
-      for(uint32_t step=0; step<rollout_length; step++) {
-        char * head = (char*)mem.data() + (batch_idx * rollout_length + step) * rem.entry_size;
+      for(uint32_t step=0; step<rem.rollout_len; step++) {
+        char * head = (char*)mem.data() + (batch_idx * rem.rollout_len + step) * rem.entry_size;
         py::tuple entry = py_unserialize_from_mem(head);
         rollout.append(entry);
       }

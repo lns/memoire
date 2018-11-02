@@ -30,15 +30,51 @@ if False:
   print(rollout)
   client.push_data(rollout, False)
 
-for j in range(4):
-  rollout = []
-  for i in range(3*j+0,3*j+3):
-    entry[0].fill(i)
-    entry[1].fill(1)
-    entry[2].fill(0)
-    entry[3].fill(-1)
-    rollout.append(deepcopy(entry))
-  print(rollout)
-  client.push_data(rollout, False)
-  time.sleep(5)
+if False:
+  for j in range(4):
+    rollout = []
+    for i in range(3*j+0,3*j+3):
+      entry[0].fill(i)
+      entry[1].fill(1)
+      entry[2].fill(0)
+      entry[3].fill(-1)
+      rollout.append(deepcopy(entry))
+    print(rollout)
+    client.push_data(rollout, False)
+    time.sleep(5)
 
+if False:
+  for j in range(4):
+    rollout = []
+    for i in range(10*j+0,10*j+3):
+      entry[0].fill(i)
+      entry[1].fill(1)
+      entry[2].fill(0)
+      entry[3].fill(-1)
+      rollout.append(deepcopy(entry))
+    print(rollout)
+    client.push_data(rollout, True)
+    time.sleep(5)
+
+if True:
+  for j in range(4):
+    rollout = []
+    for i in range(10*j+0,10*j+3):
+      entry[0].fill(i)
+      entry[1].fill(1)
+      entry[2].fill(0)
+      entry[3].fill(-1)
+      rollout.append(deepcopy(entry))
+    print(rollout)
+    client.push_data(rollout, False)
+    time.sleep(5)
+    rollout = []
+    for i in range(10*j+3,10*j+6):
+      entry[0].fill(i)
+      entry[1].fill(1)
+      entry[2].fill(0)
+      entry[3].fill(-1)
+      rollout.append(deepcopy(entry))
+    print(rollout)
+    client.push_data(rollout, True)
+    time.sleep(5)

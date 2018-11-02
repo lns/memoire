@@ -17,6 +17,7 @@ public:
   void * data() const { return mem_.data(); };
   size_t size() const { return entry_num_; };
   size_t capacity() const { return mem_.size() / entry_size; }
+  size_t nbytes() const { return mem_.size(); }
 
   /**
    * Constructor

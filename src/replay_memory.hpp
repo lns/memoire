@@ -60,8 +60,8 @@ public:
 
   class Episode {
   public:
-    const long offset;
-    const long length;
+    long offset;
+    long length;
     Episode(long o, long l) : offset{o}, length{l} {}
   };
 
@@ -132,15 +132,10 @@ public:
       if(episode.empty())
         qthrow("episode is empty.");
       // clear priority
-      // TODO: Optimize this
       const auto& front = episode.front();
       clear_priority(front.offset, front.length);
       // pop episode
       episode.pop();
-      if(true) {
-        std::lock_guard<std::mutex> guard(prm->rem_mutex);
-        prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
-      }
     }
 
     /**
@@ -180,17 +175,7 @@ public:
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
-      for(int i=0; i<std::min<int>(prm->pre_skip, len); i++) {
-        long idx = (off + i) % data.capacity();
-        prt.set_weight(idx, 0.0);
-      }
-      for(int i=0; i<std::min<int>(prm->post_skip, len); i++) {
-        long idx = (off + len - 1 - i) % data.capacity();
-        prt.set_weight(idx, 0.0);
-      }
-      assert(cur_step >= len);
-      float state_dist = pow(prm->step_discount, (cur_step - len) + prm->pre_skip);
-      for(int i=prm->pre_skip; i<len-prm->post_skip; i++) {
+      for(int i=0; i<len; i++) {
         long idx = (off + i) % data.capacity();
         auto prev_value  = data[idx].value(prm).as_array<float>();
         auto prev_qvest  = data[idx].qvest(prm).as_array<float>();
@@ -205,12 +190,7 @@ public:
         float c = sqrt(prm->ma_sqa/2);
         // calculate real priority
         priority = pow(fabs(priority/c), prm->priority_exponent);
-        prt.set_weight(idx, priority * state_dist);
-        state_dist *= prm->step_discount;
-      }
-      if(true) {
-        std::lock_guard<std::mutex> guard(prm->rem_mutex);
-        prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
+        prt.set_weight(idx, priority);
       }
     }
     void update_weight(ReplayMemory * prm, const Episode& epi) {
@@ -224,6 +204,11 @@ public:
         long idx = (offset + i) % data.capacity();
         prt.set_weight(idx, 0);
       }
+    }
+
+    void update_global_weight(ReplayMemory * prm) {
+      std::lock_guard<std::mutex> guard(prm->rem_mutex);
+      prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
     }
 
     void add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
@@ -246,8 +231,16 @@ public:
       // Check space
       while(!episode.empty() and (new_length + n_step) > get_new_length()) {
         //qlog_info("new_length: %ld, get_new_length: %ld\n", new_length, get_new_length());
-        remove_oldest(prm);
+        long len = new_length + n_step - get_new_length();
+        auto& front = episode.front();
+        if(len < front.length) {
+          front.offset += len;
+          front.length -= len;
+        }
+        else
+          episode.pop();
       }
+      // Write to memory
       char * mem_data = static_cast<char*>(raw_data);
       long idx = (new_offset + new_length) % data.capacity();
       long len_to_write = n_step;
@@ -258,11 +251,11 @@ public:
         mem_data += len * data.entry_size;
         len_to_write -= len;
       }
+      // Update variables
       new_length = std::min<long>(new_length + n_step, data.capacity());
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
       prm->incre_step += n_step;
-      qassert(new_length <= get_new_length());
       if(is_episode_end) {
         qassert(stage == 10);
         episode.emplace(new_offset, new_length);
@@ -274,6 +267,16 @@ public:
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end);
       update_weight(prm, new_offset, new_length);
+      long len = episode.size() > 0 ? (idx - episode.front().offset) : new_length;
+      len = (len + data.capacity() - 1) % data.capacity() + 1;
+      len = std::min<long>(prm->rollout_len - 1 + n_step, len);
+      qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
+      update_weight(prm, idx - len, len);
+      qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
+      qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld, len: %ld\n", new_offset, new_length, idx, len);
+      clear_priority(idx - prm->rollout_len + 1, prm->rollout_len - 1);
+      qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
+      update_global_weight(prm);
     }
 
   };
@@ -287,8 +290,7 @@ public:
   size_t max_episode;                ///< max number of stored episodes allowed for each slot (0 for not checking)
   float priority_exponent;           ///< exponent of priority term (default 0.0)
   float mix_lambda;                  ///< mixture factor for computing multi-step return
-  unsigned pre_skip;                 ///< number of frames stacked for each state (default 0)
-  unsigned post_skip;                ///< number of steps between prev and next (default 0)
+  unsigned rollout_len;              ///< rollout length
   float step_discount;               ///< discount coefficient for state distribution sampling.
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
@@ -329,8 +331,7 @@ public:
     max_episode{0},
     priority_exponent{0.0},
     mix_lambda{1.0},
-    pre_skip{0},
-    post_skip{0},
+    rollout_len{1},
     step_discount{1.0},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
@@ -396,8 +397,7 @@ public:
     fprintf(f, "max_episode:   %lu\n", max_episode);
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
-    fprintf(f, "pre_skip:      %d\n",  pre_skip);
-    fprintf(f, "post_skip:     %d\n",  post_skip);
+    fprintf(f, "rollout_len:   %u\n",  rollout_len);
     fprintf(f, "step_discount: %lf\n", step_discount);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
@@ -427,9 +427,8 @@ public:
    * TODO(qing) sampling without replacement.
    * TODO(qing) should we use average priority over rollout for sampling?
    */
-  void get_data(void * raw_data, float * weight, uint32_t batch_size, uint32_t rollout_length) {
-    qassert(post_skip+1 >= rollout_length); // or else, you should increase post_skip or decrease rollout_length
-    qassert(rollout_length <= max_step);
+  void get_data(void * raw_data, float * weight, uint32_t batch_size) {
+    qassert(rollout_len <= max_step);
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
       std::unique_lock<std::mutex> lock(rem_mutex);
       if(slot_prt.get_weight_sum() <= 0) {
@@ -441,19 +440,21 @@ public:
       lock.unlock();
       if(true) {
         std::lock_guard<std::mutex> guard(slots[slot_index].slot_mutex);
+        qlog_debug("get_data(): total_weight_sum: %le, weight_sum: %le\n",
+            slot_prt.get_weight_sum(), slots[slot_index].prt.get_weight_sum());
         uint32_t entry_idx = slots[slot_index].prt.sample_index();
         // Copy to raw_data
-        char * dst = static_cast<char*>(raw_data) + batch_idx * rollout_length * entry_size;
+        char * dst = static_cast<char*>(raw_data) + batch_idx * rollout_len * entry_size;
         void * src = slots[slot_index][entry_idx].data();
-        if(entry_idx + rollout_length > max_step) {
+        if(entry_idx + rollout_len > max_step) {
           long len = max_step - entry_idx;
           memcpy(dst, src, len * entry_size);
           dst += len * entry_size;
           src = slots[slot_index][0].data();
-          memcpy(dst, src, (rollout_length - len) * entry_size);
+          memcpy(dst, src, (rollout_len - len) * entry_size);
         }
         else
-          memcpy(dst, src, rollout_length * entry_size);
+          memcpy(dst, src, rollout_len * entry_size);
         weight[batch_idx] = slots[slot_index].prt.get_weight(entry_idx);
       }
     }
