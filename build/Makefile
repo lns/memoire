@@ -1,7 +1,7 @@
 # makefile
 
 ROOT=..
-ENABLE_DEBUG=1
+ENABLE_DEBUG=0
 PYBIND11_ROOT=$(HOME)/ext/pybind11
 # libprotobuf.a should be compiled with CXXFLAGS=-fPIC, or the compilation of memoire.so
 # may fail with a relocation error. ("..can not be used when making a shared object;")
