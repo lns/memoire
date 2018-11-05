@@ -61,7 +61,12 @@ public:
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int size;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, &reqbuf[0], reqbuf.size(), 0));
+      size = zmq_recv(soc, &reqbuf[0], reqbuf.size(), 0);
+      if(size == -1) { // receive failed.
+        int e = zmq_errno();
+        qlog_warning("[ERRNO %d] '%s'.", e, zmq_strerror(e));
+        return;
+      }
       if(not (size <= (int)reqbuf.size())) { // resize and wait for next
         reqbuf.resize(size);
         qlog_warning("Resize reqbuf to %lu. Waiting for next request.. \n", reqbuf.size());
@@ -103,7 +108,12 @@ public:
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int size;
     while(true) {
-      ZMQ_CALL(size = zmq_recv(soc, &buf[0], buf.size(), 0));
+      size = zmq_recv(soc, &buf[0], buf.size(), 0);
+      if(size == -1) { // receive failed.
+        int e = zmq_errno();
+        qlog_warning("[ERRNO %d] '%s'.", e, zmq_strerror(e));
+        return;
+      }
       if(not (size <= (int)buf.size())) { // resize and wait for next
         buf.resize(size);
         qlog_warning("Resize buf to %lu. Waiting for next push.. \n", buf.size());

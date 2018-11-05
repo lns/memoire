@@ -2,28 +2,22 @@
 
 import numpy as np
 import os, time
-from memoire import ReplayMemory, ReplayMemoryServer, Bind, Conn
+from memoire import Proxy, Bind, Conn
 from threading import Thread
 
-# Not used
-s = a = r = p = v = q = i = np.ndarray([], dtype=np.float32)
-template = (s,a,r,p,v,q,i)
-server = ReplayMemoryServer(*template, max_step=0, n_caches=0, pub_endpoint="")
-rem = server.rem
-
-front_ep = 'tcp://localhost:5560'
-back_ep  = 'tcp://*:25560'
+proxy = Proxy()
 
 threads = []
-threads.append(Thread(target=server.pub_proxy_main,  args=(front_ep, Conn, back_ep, Bind)))
-
-print("Starting proxy '%s' -> '%s'" % (front_ep, back_ep))
-
-for th in threads:
-  th.start()
+threads.append(Thread(target=proxy.rep_proxy_main,
+  args=("ipc:///tmp/memoire_reqrep_test", Bind, "tcp://localhost:10101", Conn, 1)))
+threads.append(Thread(target=proxy.pull_proxy_main,
+  args=("ipc:///tmp/memoire_pushpull_test", Bind, "tcp://localhost:10102", Conn, 1)))
 
 try:
-  th.join()
+  for th in threads:
+    th.start()
+  while True:
+    time.sleep(1)
 except KeyboardInterrupt:
   pass
 os.kill(os.getpid(), 9)

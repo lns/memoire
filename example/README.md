@@ -6,9 +6,10 @@ python client.py
 ```
 
 Experiment 2:
+set `use_proxy = True` in client.py
 ```bash
-python sub.py &
+python server.py &
 python proxy.py &
-python pub.py
+python client.py
 ```
 

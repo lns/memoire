@@ -124,6 +124,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     ;
 
   py::class_<Proxy>(m, "Proxy")
+    .def(py::init<>())
     .def("rep_proxy_main",   &Proxy::rep_proxy_main,   py::call_guard<py::gil_scoped_release>())
     .def("pull_proxy_main",  &Proxy::pull_proxy_main,  py::call_guard<py::gil_scoped_release>())
     .def("pub_proxy_main",   &Proxy::pub_proxy_main,   py::call_guard<py::gil_scoped_release>())

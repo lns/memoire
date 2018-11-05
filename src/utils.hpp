@@ -38,7 +38,8 @@ protected:
   int rc = (x); \
   if(unlikely(-1==rc)) { \
     int e = zmq_errno(); \
-    qlog_error("[%d]'%s' (rc: %d)\n", e, zmq_strerror(e), rc); \
+    qlog_warning("[ERRNO %d] '%s' (rc: %d). Abort.\n", e, zmq_strerror(e), rc); \
+		throw std::runtime_error("Critical error."); \
   } \
 } while(0)
 #endif
