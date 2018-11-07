@@ -18,11 +18,18 @@ public:
   const std::string x_descr_pickle;
   std::unordered_map<std::string, uint32_t> m;
 
+  std::string pub_endpoint;
+  int pub_hwm;
+  int rep_hwm;
+  int pull_hwm;
+
   ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
       qlib::RNG * prt_rng, std::string input_descr_pickle)
     : rem{vw, max_step, n_slot, prt_rng},
       x_descr_pickle{input_descr_pickle}
-  {}
+  {
+    pub_hwm = rep_hwm = pull_hwm = 32;
+  }
 
   ~ReplayMemoryServer() {}
 
@@ -54,6 +61,8 @@ public:
   void rep_worker_main(const char * endpoint, typename RM::Mode mode)
   {
     void * soc = new_zmq_socket(ZMQ_REP);
+    ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &rep_hwm, sizeof(rep_hwm)));
+    ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &rep_hwm, sizeof(rep_hwm)));
     std::string reqbuf(1024, '\0'), repbuf(1024, '\0'); // TODO(qing): adjust default size
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
@@ -74,7 +83,7 @@ public:
       }
       proto::Msg req, rep;
       req.ParseFromString(reqbuf);
-      qlog_debug("Received msg: %s\n", req.DebugString().c_str());
+      qlog_debug("Received msg of size(%lu): %s\n", reqbuf.size(), req.DebugString().c_str());
       qassert(req.version() == rep.version());
       rep.set_version(req.version());
       if(req.type() == proto::REQ_GET_INFO) {
@@ -91,7 +100,7 @@ public:
         qthrow("Unknown args->type");
       rep.SerializeToString(&repbuf);
       ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
-      qlog_debug("Send msg: %s\n", rep.DebugString().c_str());
+      qlog_debug("Send msg of size(%lu): %s\n", reqbuf.size(), rep.DebugString().c_str());
     }
   }
 
@@ -101,6 +110,8 @@ public:
   void pull_worker_main(const char * endpoint, typename RM::Mode mode)
   {
     void * soc = new_zmq_socket(ZMQ_PULL);
+    ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &pull_hwm, sizeof(pull_hwm)));
+    ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &pull_hwm, sizeof(pull_hwm)));
     std::string buf(1024, '\0'); // TODO(qing): adjust default size
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
@@ -121,7 +132,7 @@ public:
       }
       proto::Msg msg;
       msg.ParseFromString(buf);
-      qlog_debug("Received msg: %s\n", msg.DebugString().c_str());
+      qlog_debug("Received msg of size(%lu): %s\n", buf.size(), msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
       if(msg.type() == proto::PUSH_DATA) {
         auto * p = msg.mutable_push_data();
@@ -130,6 +141,34 @@ public:
       else
         qthrow("Unknown args->type");
     }
+  }
+
+  /**
+   * Publish a byte string to clients
+   */
+  void pub_bytes(const std::string& topic, const std::string& message) {
+    thread_local void * soc = nullptr;
+    if(not soc) {
+      if(pub_endpoint == "") {
+        qlog_warning("To use %s(), please set server.pub_endpoint firstly\n", __func__);
+        return;
+      }
+      soc = new_zmq_socket(ZMQ_PUB);
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &pub_hwm, sizeof(pub_hwm)));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &pub_hwm, sizeof(pub_hwm)));
+      #ifdef EPGM_EXPERIMENT
+      int multicast_hops = 255; // default 1
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_MULTICAST_HOPS, &multicast_hops, sizeof(multicast_hops)));
+      int rate = 1048576; // 1Gb
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RATE, &rate, sizeof(rate)));
+      int recovery_ivl = 200; // 200ms
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RECOVERY_IVL, &recovery_ivl, sizeof(recovery_ivl)));
+      #endif
+      ZMQ_CALL(zmq_bind(soc, pub_endpoint.c_str()));
+    }
+    qlog_debug("Publish msg of size(%lu) in topic '%s'.\n", message.size(), topic.c_str());
+    ZMQ_CALL(zmq_send(soc, topic.data(), topic.size(), ZMQ_SNDMORE));
+    ZMQ_CALL(zmq_send(soc, message.data(), message.size(), 0));
   }
 
   /**

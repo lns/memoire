@@ -15,9 +15,14 @@ public:
   uint32_t entry_size;
   std::vector<BufView> view;
 
-  std::string uuid;
+  const std::string uuid;
+  std::string sub_endpoint;
   std::string req_endpoint;
   std::string push_endpoint;
+  int sub_hwm;
+  int req_hwm;
+  int push_hwm;
+  size_t sub_size;              ///< default size of buffer for sub
 
   uint32_t start_step;
 
@@ -28,15 +33,14 @@ public:
    * endpoint can be set to nullptr or "" to disable this protocal
    */
   ReplayMemoryClient(
-      const std::string input_uuid,
-      const std::string req_ep,
-      const std::string push_ep)
+      const std::string input_uuid)
     : remote_slot_index{~0u},
       uuid{input_uuid},
-      req_endpoint{req_ep},
-      push_endpoint{push_ep},
       start_step{0}
-  {}
+  {
+    sub_hwm = req_hwm = push_hwm = 4;
+    sub_size = 256;
+  }
 
   ~ReplayMemoryClient() {}
 
@@ -45,7 +49,13 @@ public:
     thread_local std::string reqbuf;
     thread_local std::string repbuf;
     if(not soc) {
+      if(req_endpoint == "") {
+        qlog_warning("To use %s(), please set client.req_endpoint firstly.\n", __func__);
+        return;
+      }
       soc = new_zmq_socket(ZMQ_REQ);
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &req_hwm, sizeof(req_hwm)));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &req_hwm, sizeof(req_hwm)));
       ZMQ_CALL(zmq_connect(soc, req_endpoint.c_str()));
       reqbuf.resize(1024, '\0');
       repbuf.resize(1024, '\0'); // TODO(qing): adjust default size
@@ -58,7 +68,7 @@ public:
     do {
       int size;
       ZMQ_CALL(zmq_send(soc, reqbuf.data(), reqbuf.size(), 0));
-      qlog_debug("Send msg.. %s\n", req.DebugString().c_str()); 
+      qlog_debug("Send msg of size(%lu): %s\n", reqbuf.size(), req.DebugString().c_str()); 
       ZMQ_CALL(size = zmq_recv(soc, &repbuf[0], repbuf.size(), 0));
       if(not (size <= (int)repbuf.size())) { // resize and wait for next
         repbuf.resize(size);
@@ -68,7 +78,7 @@ public:
     } while(false);
     proto::Msg rep;
     rep.ParseFromString(repbuf);
-    qlog_debug("Received msg.. %s\n", rep.DebugString().c_str()); 
+    qlog_debug("Received msg of size(%lu) %s\n", repbuf.size(), rep.DebugString().c_str()); 
     qassert(rep.version() == req.version());
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
@@ -86,7 +96,13 @@ public:
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
     if(not soc) {
+      if(push_endpoint == "") {
+        qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
+        return;
+      }
       soc = new_zmq_socket(ZMQ_PUSH);
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &push_hwm, sizeof(push_hwm)));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &push_hwm, sizeof(push_hwm))); // not used
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(1024, '\0');
     }
@@ -101,12 +117,80 @@ public:
     d->set_slot_index(remote_slot_index);
     d->set_data(data, n_step * entry_size);
     push.SerializeToString(&pushbuf);
-    qlog_debug("Send msg.. %s\n", push.DebugString().c_str()); 
+    qlog_debug("Send msg of size(%lu): %s\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     if(is_episode_end)
       start_step = 0;
     else
       start_step += n_step;
+  }
+
+  /**
+   * Blocked Receive of Bytestring
+   */
+  std::string sub_bytes(std::string topic) {
+    thread_local void * soc = nullptr;
+    thread_local Mem tpcbuf;
+    thread_local Mem subbuf;
+    thread_local std::string last_topic("");
+    if(not soc) {
+      if(sub_endpoint == "") {
+        qlog_warning("To use %s(), please set client.sub_endpoint firstly.\n", __func__);
+        return "";
+      }
+      soc = new_zmq_socket(ZMQ_SUB);
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &sub_hwm, sizeof(sub_hwm)));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &sub_hwm, sizeof(sub_hwm)));
+      #ifdef EPGM_EXPERIMENT
+      int multicast_hops = 255; // default 1
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_MULTICAST_HOPS, &multicast_hops, sizeof(multicast_hops)));
+      int rate = 1048576; // 1Gb
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RATE, &rate, sizeof(rate)));
+      int recovery_ivl = 200; // 200ms
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RECOVERY_IVL, &recovery_ivl, sizeof(recovery_ivl)));
+      #endif
+      ZMQ_CALL(zmq_connect(soc, sub_endpoint.c_str()));
+      tpcbuf.resize(256);
+      subbuf.resize(sub_size);
+    }
+    if(topic.size() >= tpcbuf.size())
+      qlog_error("topic: '%s' is too long.\n", topic.c_str());
+    if(last_topic != "")
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_UNSUBSCRIBE, last_topic.c_str(), last_topic.size()));
+    last_topic = topic;
+    if(topic != "")
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SUBSCRIBE, topic.c_str(), topic.size()));
+    int size;
+    while(true) {
+      memset(tpcbuf.data(), 0, tpcbuf.size());
+      memset(subbuf.data(), 0, subbuf.size());
+      // Recv topic
+      ZMQ_CALL(size = zmq_recv(soc, tpcbuf.data(), tpcbuf.size(), 0)); qassert(size <= (int)tpcbuf.size());
+      // Recv Message
+      ZMQ_CALL(size = zmq_recv(soc, subbuf.data(), subbuf.size(), 0));
+      qlog_debug("Received msg of size(%d) in topic '%s'.\n", size, (char*)tpcbuf.data());
+      // Check topic
+      if(strcmp((const char*)tpcbuf.data(), topic.data())) { // topic mismatch, this should not happen
+        qlog_error("topic mismatch: '%s' != '%s'\n", (const char *)tpcbuf.data(), topic.c_str());
+      }
+      // Check msg size
+      if(not (size <= (int)subbuf.size())) { // resize and wait for next
+        qlog_warning("Resize subbuf from %lu to %d and wait for next.\n", subbuf.size(), size);
+        subbuf.resize(size);
+        continue;
+      }
+      else
+        return std::string((char*)subbuf.data(), size);
+    }
+  }
+
+  py::bytes py_sub_bytes(std::string topic) {
+    std::string ret;
+    if(true) {
+      py::gil_scoped_release release;
+      ret = sub_bytes(topic);
+    }
+    return py::bytes(ret);
   }
 
   void py_serialize_entry_to_mem(py::tuple entry, void * data) const {

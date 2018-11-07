@@ -86,22 +86,31 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     ;
  
   py::class_<RMC>(m, "ReplayMemoryClient")
-    .def(py::init<const std::string&, const std::string&, const std::string&>(),
-        "uuid"_a, "req_endpoint"_a, "push_endpoint"_a)
+    .def(py::init<const std::string&>(), "uuid"_a)
     .def_readonly("x_descr_pickle", &RMC::x_descr_pickle)
     .def_readonly("remote_slot_index", &RMC::remote_slot_index)
     .def_readonly("entry_size", &RMC::entry_size)
     .def_readonly("view", &RMC::view)
-    .def_readonly("req_endpoint", &RMC::req_endpoint)
-    .def_readonly("push_endpoint", &RMC::push_endpoint)
+    .def_readwrite("sub_endpoint", &RMC::sub_endpoint)
+    .def_readwrite("req_endpoint", &RMC::req_endpoint)
+    .def_readwrite("push_endpoint", &RMC::push_endpoint)
+    .def_readwrite("sub_hwm", &RMC::sub_hwm)
+    .def_readwrite("req_hwm", &RMC::req_hwm)
+    .def_readwrite("push_hwm", &RMC::push_hwm)
+    .def_readwrite("sub_size", &RMC::sub_size)
     .def_readonly("uuid", &RMC::uuid)
     .def("close", &RMC::close, py::call_guard<py::gil_scoped_release>())
     .def("get_info", &RMC::get_info, py::call_guard<py::gil_scoped_release>())
     .def("push_data", &RMC::py_push_data)
+    .def("sub_bytes", &RMC::py_sub_bytes)
     ;
 
   py::class_<RMS>(m, "ReplayMemoryServer")
     .def_readonly("rem", &RMS::rem)
+    .def_readwrite("pub_endpoint", &RMS::pub_endpoint)
+    .def_readwrite("pub_hwm", &RMS::pub_hwm)
+    .def_readwrite("rep_hwm", &RMS::rep_hwm)
+    .def_readwrite("pull_hwm", &RMS::pull_hwm)
     .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot) {
         // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
         py::list x = py::list(entry)[py::slice(0,-3,1)];
@@ -118,6 +127,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
       }), "entry"_a, "max_step"_a, "n_slot"_a)
     .def("close", &RMS::close, py::call_guard<py::gil_scoped_release>())
     .def("get_data", &RMS::py_get_data)
+    .def("pub_bytes", &RMS::pub_bytes, py::call_guard<py::gil_scoped_release>())
     .def("print_info", [](RMS& rms) { rms.print_info(stderr); }, py::call_guard<py::gil_scoped_release>())
     .def("rep_worker_main",  &RMS::rep_worker_main,    py::call_guard<py::gil_scoped_release>())
     .def("pull_worker_main", &RMS::pull_worker_main,   py::call_guard<py::gil_scoped_release>())

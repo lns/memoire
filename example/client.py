@@ -4,18 +4,15 @@ import numpy as np
 import pickle, time
 from copy import deepcopy
 
-use_proxy = True
+use_proxy = False
 
+client = ReplayMemoryClient("client_test")
 if use_proxy:
-  client = ReplayMemoryClient(
-      "client_test",
-      "ipc:///tmp/memoire_reqrep_test",
-      "ipc:///tmp/memoire_pushpull_test")
+  client.req_endpoint = "ipc:///tmp/memoire_reqrep_test"
+  client.push_endpoint = "ipc:///tmp/memoire_pushpull_test"
 else:
-  client = ReplayMemoryClient(
-      "client_test",
-      "tcp://localhost:10101",
-      "tcp://localhost:10102")
+  client.req_endpoint = "tcp://localhost:10101"
+  client.push_endpoint = "tcp://localhost:10102"
 
 client.get_info()
 print(pickle.loads(client.x_descr_pickle))

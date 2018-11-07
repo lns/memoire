@@ -18,10 +18,9 @@ server.rem.max_episode = 0
 
 def client_main(n_episode=1, first_len=3, last_len=3):
   from copy import deepcopy
-  client = ReplayMemoryClient(
-      "client_test",
-      "tcp://localhost:10101",
-      "tcp://localhost:10102")
+  client = ReplayMemoryClient("client_test")
+  client.req_endpoint = "tcp://localhost:10101"
+  client.push_endpoint = "tcp://localhost:10102"
   client.get_info()
 
   for j in range(n_episode):
