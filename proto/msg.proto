@@ -11,6 +11,7 @@ enum MsgType {
   REQ_GET_INFO = 11;
   REP_GET_INFO = 12;
   PUSH_DATA = 21;
+  PUSH_LOG = 22;
   REQ_NEW_MATCH = 51;
   REP_NEW_MATCH = 52;
   REQ_GET_MODEL = 53;
@@ -42,6 +43,10 @@ message PushData {
   required uint32 n_step = 3;
   required uint32 slot_index = 4;
   required bytes data = 10;
+}
+
+message PushLog {
+  required string log = 10;
 }
 
 message ReqNewMatch {
@@ -80,6 +85,7 @@ message Msg {
     ReqGetInfo  req_get_info  = 11;
     RepGetInfo  rep_get_info  = 12;
     PushData    push_data     = 21;
+    PushLog     push_log      = 22;
     ReqNewMatch req_new_match = 51;
     RepNewMatch rep_new_match = 52;
     ReqGetModel req_get_model = 53;

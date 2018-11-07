@@ -116,7 +116,7 @@ public:
     }
     proto::Msg push;
     push.set_type(proto::PUSH_DATA);
-    push.set_version(push.version()); // TODO(qing): check this
+    push.set_version(push.version());
     push.set_sender(uuid);
     auto * d = push.mutable_push_data();
     d->set_is_episode_end(is_episode_end);
@@ -131,6 +131,31 @@ public:
       start_step = 0;
     else
       start_step += n_step;
+  }
+
+  void push_log(const std::string& msg) {
+    thread_local void * soc = nullptr;
+    thread_local std::string pushbuf;
+    if(not soc) {
+      if(push_endpoint == "") {
+        qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
+        return;
+      }
+      soc = new_zmq_socket(ZMQ_PUSH);
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &push_hwm, sizeof(push_hwm)));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &push_hwm, sizeof(push_hwm))); // not used
+      ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
+      pushbuf.resize(1024, '\0');
+    }
+    proto::Msg push;
+    push.set_type(proto::PUSH_LOG);
+    push.set_version(push.version());
+    push.set_sender(uuid);
+    auto * d = push.mutable_push_log();
+    d->set_log(msg);
+    push.SerializeToString(&pushbuf);
+    qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
+    ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
   }
 
   /**

@@ -24,15 +24,24 @@ public:
   int rep_hwm;
   int pull_hwm;
 
+  std::string logfile_path;
+  FILE * logfile;
+  std::mutex logfile_mutex;
+
   ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
       qlib::RNG * prt_rng, std::string input_descr_pickle)
     : rem{vw, max_step, n_slot, prt_rng},
-      x_descr_pickle{input_descr_pickle}
+      x_descr_pickle{input_descr_pickle},
+      logfile{nullptr}
   {
     pub_hwm = rep_hwm = pull_hwm = 32;
   }
 
-  ~ReplayMemoryServer() {}
+  ~ReplayMemoryServer() {
+    if(logfile)
+      fclose(logfile);
+    logfile = nullptr;
+  }
 
 protected:
   uint32_t get_slot_index(std::string client_uuid)
@@ -51,9 +60,18 @@ protected:
   }
 
 public:
-  void print_info(FILE * f = stderr) const
+  void print_info() const
   {
-    rem.print_info(f);
+    rem.print_info(stderr);
+  }
+
+  void set_logfile(const std::string path, const std::string mode) {
+    std::lock_guard<std::mutex> guard(logfile_mutex);
+    if(logfile)
+      fclose(logfile);
+    logfile = fopen(path.c_str(), mode.c_str());
+    if(not logfile)
+      qlog_error("fopen(%s,%s) failed.\n", path.c_str(), mode.c_str());
   }
  
   /**
@@ -150,8 +168,16 @@ public:
       qlog_debug("Received msg of size(%lu): '%s'\n", buf.size(), msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
       if(msg.type() == proto::PUSH_DATA) {
-        auto * p = msg.mutable_push_data();
+        const auto * p = msg.mutable_push_data();
         rem.add_data(p->slot_index(), (void*)p->data().data(), p->start_step(), p->n_step(), p->is_episode_end());
+      }
+      else if(msg.type() == proto::PUSH_LOG) {
+        if(logfile) {
+          std::lock_guard<std::mutex> guard(logfile_mutex);
+          const auto * p = msg.mutable_push_log();
+          fwrite((void*)p->log().data(), 1, p->log().size(), logfile);
+          fflush(logfile);
+        }
       }
       else
         qthrow("Unknown args->type");

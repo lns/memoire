@@ -20,7 +20,6 @@ static void print_logo() __attribute__((constructor));
 
 void print_logo() {
   fprintf(stderr, " Memoire v3, ver %lu, built on %s.\n", VERSION, __DATE__);
-  qlog_set_print_time(true);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
@@ -100,10 +99,11 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("push_hwm", &RMC::push_hwm)
     .def_readwrite("sub_size", &RMC::sub_size)
     .def_readonly("uuid", &RMC::uuid)
-    .def("close", &RMC::close, py::call_guard<py::gil_scoped_release>())
-    .def("get_info", &RMC::get_info, py::call_guard<py::gil_scoped_release>())
-    .def("push_data", &RMC::py_push_data)
-    .def("sub_bytes", &RMC::py_sub_bytes)
+    .def("close",            &RMC::close,              py::call_guard<py::gil_scoped_release>())
+    .def("get_info",         &RMC::get_info,           py::call_guard<py::gil_scoped_release>())
+    .def("push_data",        &RMC::py_push_data)
+    .def("sub_bytes",        &RMC::py_sub_bytes)
+    .def("push_log",         &RMC::push_log,           py::call_guard<py::gil_scoped_release>())
     ;
 
   py::class_<RMS>(m, "ReplayMemoryServer")
@@ -126,10 +126,11 @@ PYBIND11_MODULE(memoire /* module name */, m) {
         view[4] = AS_BV(entry[entry.size()-1]); // q
         return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,x_descr_pickle)));
       }), "entry"_a, "max_step"_a, "n_slot"_a)
-    .def("close", &RMS::close, py::call_guard<py::gil_scoped_release>())
-    .def("get_data", &RMS::py_get_data)
-    .def("pub_bytes", &RMS::pub_bytes, py::call_guard<py::gil_scoped_release>())
-    .def("print_info", [](RMS& rms) { rms.print_info(stderr); }, py::call_guard<py::gil_scoped_release>())
+    .def("close",            &RMS::close,              py::call_guard<py::gil_scoped_release>())
+    .def("get_data",         &RMS::py_get_data)
+    .def("pub_bytes",        &RMS::pub_bytes,          py::call_guard<py::gil_scoped_release>())
+    .def("set_logfile",      &RMS::set_logfile,        py::call_guard<py::gil_scoped_release>())
+    .def("print_info",       &RMS::print_info,         py::call_guard<py::gil_scoped_release>())
     .def("rep_worker_main",  &RMS::rep_worker_main,    py::call_guard<py::gil_scoped_release>())
     .def("pull_worker_main", &RMS::pull_worker_main,   py::call_guard<py::gil_scoped_release>())
     ;
