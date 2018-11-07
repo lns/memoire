@@ -1,2 +1,7 @@
 build/*.so
+build/*.o
+build/msg.pb.*
+build/*_pb2.py
+*/obsoleted/
+*/__pycache__/
 

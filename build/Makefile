@@ -9,6 +9,7 @@ PROTOBUF_STATIC=/usr/local/lib/libprotobuf.a
 
 CXX=g++
 CXXFLAGS=-std=c++11 -O3 -Wall -fvisibility=hidden
+PROTOC=protoc
 
 ifeq ($(ENABLE_DEBUG),1)
 	BACKWARD_MACRO=-DBACKWARD_HAS_BFD=1 -g -DPRINT_DEBUG
@@ -26,24 +27,27 @@ PYINC=`python -m pybind11 --includes`
 #PY34INC=`python3.4 -m pybind11 --includes`
 #PYINC=$(PY27INC)
 
-INCLUDES=$(BACKWARD_MACRO) -I$(ROOT)/src -I$(ROOT)/include -I$(ROOT)/proto -I$(PYBIND11_ROOT)/include 
+INCLUDES=$(BACKWARD_MACRO) -I. -I$(ROOT)/src -I$(ROOT)/include -I$(PYBIND11_ROOT)/include 
 LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
 
 ALL=memoire.so memoire.o msg.pb.o
 
 all: $(ALL)
 
-msg.pb.o: $(ROOT)/proto/msg.pb.cc $(ROOT)/proto/*.proto
+msg.pb.cc: $(ROOT)/proto/*.proto
+	$(PROTOC) --cpp_out=. --python_out=. --proto_path=$(ROOT)/proto/ $(ROOT)/proto/*.proto
+
+msg.pb.o: msg.pb.cc $(ROOT)/proto/*.proto
 	$(CXX) $(CXXFLAGS) -fPIC -c $(INCLUDES) $(PYINC) -o $@ $<
 
-memoire.o: $(ROOT)/memoire.cpp $(ROOT)/src/* $(ROOT)/include/*
+memoire.o: $(ROOT)/memoire.cpp msg.pb.cc $(ROOT)/src/* $(ROOT)/include/*
 	$(CXX) $(CXXFLAGS) -fPIC -c $(INCLUDES) $(PYINC) -o $@ $<
 
 memoire.so: memoire.o msg.pb.o $(PROTOBUF_STATIC)
 	$(CXX) $(CXXFLAGS) -fPIC -shared $(INCLUDES) $(PYINC) -o $@ $^ $(LDFLAGS)
 
 clean:
-	-rm -f $(ALL)
+	-rm -f $(ALL) msg.pb.* msg_pb2.py
 
 .PHONY: clean
 

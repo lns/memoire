@@ -1,2 +1,1 @@
 + upgrade doc to current version
-+ add support for calling pub_bytes() in multiple threads (with a proxy)

@@ -72,24 +72,37 @@ See `example/`
 
 ## Build
 The module is based on [pybind11](https://github.com/pybind/pybind11). We recommend to clone the latest version of pybind11 from github, and set the `PYBIND11_ROOT` properly in [Makefile](build/Makefile).
-We support different version of python. To use this module, firstly choose your python version in [Makefile](build/Makefile)
+```shell
+pip uninstall pybind11       # Remove old version
+cd pybind11
+pip install -e .             # Install from source
+```
+We also use new features in [google-protobuf](https://github.com/protocolbuffers/protobuf). To install/update your protobuf to the latest version, you can install from source at [protobuf-release](https://github.com/protocolbuffers/protobuf/releases) with following commands.
+```shell
+yum erase protobuf           # Remove old version
+cd protobuf-3.6.1/
+./configure CXXFLAGS=-fPIC   # Compile with -fPIC
+make -j                      # Compile
+make install                 # Install system-wide
+```
+
+We support different version of python. You can choose your python version in [Makefile](build/Makefile)
 ```make
 PYINC=$(PY27INC)
 ```
 Then execute
 ```shell
-make
+make -j
 ```
 The generated `memoire.so` can be directly imported in python by
 ```python
 import memoire
 ```
 
-## Dependency
-ZeroMQ, google-test, pybind11, libbfd (for debug).
+## Other Dependency
+ZeroMQ, google-test, libbfd (for debug).
 ```shell
 yum install zeromq-devel binutils-devel gtest-devel
-pip install pybind11
 ```
 
 ## Documentation
