@@ -4,4 +4,7 @@ build/msg.pb.*
 build/*_pb2.py
 */obsoleted/
 */__pycache__/
+*.pyc
+*.log
+*.msg
 

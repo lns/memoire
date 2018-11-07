@@ -4,6 +4,7 @@
 #include <vector>
 #include <thread>
 #include <cstdlib>
+#include <iostream>
 #include <functional>
 #include "replay_memory.hpp"
 #include "hexdump.hpp"
@@ -77,13 +78,21 @@ public:
         return;
       }
       if(not (size <= (int)reqbuf.size())) { // resize and wait for next
+        qlog_warning("Resize reqbuf from %lu to %d. Waiting for next request.\n", reqbuf.size(), size);
         reqbuf.resize(size);
-        qlog_warning("Resize reqbuf to %lu. Waiting for next request.. \n", reqbuf.size());
         continue;
       }
       proto::Msg req, rep;
-      req.ParseFromString(reqbuf);
-      qlog_debug("Received msg of size(%lu): %s\n", reqbuf.size(), req.DebugString().c_str());
+      qlog_debug("Received msg of size(%d)\n", size);
+      if(not req.ParseFromArray(reqbuf.data(), size)) {
+        std::ofstream out("reqbuf.msg", std::ios_base::binary | std::ios_base::trunc);
+        out << std::string(reqbuf.data(), size);
+        qlog_warning("ParseFromArray(%p, %d) failed. Saved to 'reqbuf.msg'.\n", reqbuf.data(), size);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        ZMQ_CALL(zmq_send(soc, repbuf.data(), 0, 0)); // reply with an empty message
+        continue;
+      }
+      qlog_debug("req: '%s'\n", req.DebugString().c_str());
       qassert(req.version() == rep.version());
       rep.set_version(req.version());
       if(req.type() == proto::REQ_GET_INFO) {
@@ -100,7 +109,7 @@ public:
         qthrow("Unknown args->type");
       rep.SerializeToString(&repbuf);
       ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
-      qlog_debug("Send msg of size(%lu): %s\n", reqbuf.size(), rep.DebugString().c_str());
+      qlog_debug("Send msg of size(%lu): '%s'\n", reqbuf.size(), rep.DebugString().c_str());
     }
   }
 
@@ -126,13 +135,19 @@ public:
         return;
       }
       if(not (size <= (int)buf.size())) { // resize and wait for next
+        qlog_warning("Resize buf from %lu to %d. Waiting for next push.\n", buf.size(), size);
         buf.resize(size);
-        qlog_warning("Resize buf to %lu. Waiting for next push.. \n", buf.size());
         continue;
       }
       proto::Msg msg;
-      msg.ParseFromString(buf);
-      qlog_debug("Received msg of size(%lu): %s\n", buf.size(), msg.DebugString().c_str());
+      if(not msg.ParseFromArray(buf.data(), size)) {
+        std::ofstream out("pullbuf.msg", std::ios_base::binary | std::ios_base::trunc);
+        out << std::string(buf.data(), size);
+        qlog_warning("ParseFromArray(%p, %d) failed. Saved to 'pullbuf.msg'.\n", buf.data(), size);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        continue;
+      }
+      qlog_debug("Received msg of size(%lu): '%s'\n", buf.size(), msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
       if(msg.type() == proto::PUSH_DATA) {
         auto * p = msg.mutable_push_data();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include "utils.hpp"
 #include "replay_memory.hpp"
 #include "qlog.hpp"
@@ -65,20 +66,27 @@ public:
     req.set_version(req.version());
     req.set_sender(uuid);
     req.SerializeToString(&reqbuf);
+    proto::Msg rep;
     do {
       int size;
       ZMQ_CALL(zmq_send(soc, reqbuf.data(), reqbuf.size(), 0));
-      qlog_debug("Send msg of size(%lu): %s\n", reqbuf.size(), req.DebugString().c_str()); 
+      qlog_debug("Send msg of size(%lu): '%s'\n", reqbuf.size(), req.DebugString().c_str()); 
       ZMQ_CALL(size = zmq_recv(soc, &repbuf[0], repbuf.size(), 0));
       if(not (size <= (int)repbuf.size())) { // resize and wait for next
+        qlog_warning("Resize repbuf from %lu to %d. Resending req.\n", repbuf.size(), size);
         repbuf.resize(size);
-        qlog_warning("Resize repbuf to %lu. Resending.. \n", repbuf.size());
         continue;
       }
+      qlog_debug("Received msg of size(%d)\n", size);
+      if(not rep.ParseFromArray(repbuf.data(), size)) {
+        std::ofstream out("repbuf.msg", std::ios_base::binary | std::ios_base::trunc);
+        out << std::string(repbuf.data(), size);
+        qlog_warning("ParseFromArray(%p, %d) failed. Saved to 'repbuf.msg'.\n", repbuf.data(), size);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        continue;
+      }
+      qlog_debug("rep: '%s'\n", rep.DebugString().c_str()); 
     } while(false);
-    proto::Msg rep;
-    rep.ParseFromString(repbuf);
-    qlog_debug("Received msg of size(%lu) %s\n", repbuf.size(), rep.DebugString().c_str()); 
     qassert(rep.version() == req.version());
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
@@ -117,7 +125,7 @@ public:
     d->set_slot_index(remote_slot_index);
     d->set_data(data, n_step * entry_size);
     push.SerializeToString(&pushbuf);
-    qlog_debug("Send msg of size(%lu): %s\n", pushbuf.size(), push.DebugString().c_str()); 
+    qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     if(is_episode_end)
       start_step = 0;
@@ -175,7 +183,7 @@ public:
       }
       // Check msg size
       if(not (size <= (int)subbuf.size())) { // resize and wait for next
-        qlog_warning("Resize subbuf from %lu to %d and wait for next.\n", subbuf.size(), size);
+        qlog_warning("Resize subbuf from %lu to %d and wait for the next msg.\n", subbuf.size(), size);
         subbuf.resize(size);
         continue;
       }
