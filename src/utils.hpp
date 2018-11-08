@@ -83,7 +83,7 @@ std::string get_host_ip(const char* ref_ip, uint16_t ref_port)
   assert(p);
 
   close(sock);
-  return ret;
+  return std::string(ret.data());
 }
 
 #ifdef TIME_CONNECTION

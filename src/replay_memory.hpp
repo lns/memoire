@@ -17,7 +17,7 @@
 #include "prt_tree.hpp"
 #include "buffer_view.hpp"
 
-#define VERSION (20181019ul)
+#define VERSION (20181108ul)
 
 #define N_VIEW (5)
 
