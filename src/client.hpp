@@ -44,11 +44,7 @@ public:
     sub_size = 256;
   }
 
-  ~ReplayMemoryClient() {
-    // See https://github.com/pybind/pybind11/issues/1598
-    if(descr.ptr())
-      descr.release();
-  }
+  ~ReplayMemoryClient() {}
 
   void get_info() {
     thread_local void * soc = nullptr;
