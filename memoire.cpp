@@ -12,9 +12,11 @@
 namespace py = pybind11;
 using namespace py::literals;
 
+#ifdef PRINT_DEBUG
 namespace backward {
   backward::SignalHandling sh;
 }
+#endif
 
 static void print_logo() __attribute__((constructor));
 

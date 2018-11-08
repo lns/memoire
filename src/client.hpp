@@ -12,6 +12,7 @@ template<class RM>
 class ReplayMemoryClient : public ZMQBase {
 public:
   std::string x_descr_pickle;
+  py::object descr;
   uint32_t remote_slot_index;
   uint32_t entry_size;
   std::vector<BufView> view;
@@ -43,7 +44,11 @@ public:
     sub_size = 256;
   }
 
-  ~ReplayMemoryClient() {}
+  ~ReplayMemoryClient() {
+    // See https://github.com/pybind/pybind11/issues/1598
+    if(descr.ptr())
+      descr.release();
+  }
 
   void get_info() {
     thread_local void * soc = nullptr;
@@ -226,13 +231,14 @@ public:
     return py::bytes(ret);
   }
 
-  void py_serialize_entry_to_mem(py::tuple entry, void * data) const {
+  void py_serialize_entry_to_mem(py::tuple entry, void * data) {
     if(x_descr_pickle == "")
       qlog_error("x_descr_pickle not initialied. Please call get_info() first.\n");
     qassert(view.size() == 5);
     char * head = static_cast<char*>(data);
     // x
-    static py::object descr = pickle_loads(py::bytes(x_descr_pickle)); 
+    if(not descr.ptr())
+      descr = pickle_loads(py::bytes(x_descr_pickle)); 
     head += descr_serialize_to_mem(py::list(entry)[py::slice(0,-3,1)], descr, head);
     if(true) { // r
       BufView v = AS_BV(entry[entry.size()-3]);

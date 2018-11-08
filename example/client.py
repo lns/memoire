@@ -15,7 +15,6 @@ else:
   client.push_endpoint = "tcp://localhost:10102"
 
 client.get_info()
-print(pickle.loads(client.x_descr_pickle))
 
 s = np.ndarray([2,2], dtype=np.float32)
 r = np.ndarray([], dtype=np.float32)
@@ -24,19 +23,9 @@ v = np.ndarray([], dtype=np.float32)
 
 entry = (s,r,p,v)
 
-for j in range(4):
+for j in range(1):
   rollout = []
-  for i in range(10*j+0,10*j+3):
-    entry[0].fill(i)
-    entry[1].fill(1)
-    entry[2].fill(0)
-    entry[3].fill(-1)
-    rollout.append(deepcopy(entry))
-  print(rollout)
-  client.push_data(rollout, False)
-  time.sleep(5)
-  rollout = []
-  for i in range(10*j+3,10*j+6):
+  for i in range(10*j+0,10*j+6):
     entry[0].fill(i)
     entry[1].fill(1)
     entry[2].fill(0)
@@ -44,5 +33,5 @@ for j in range(4):
     rollout.append(deepcopy(entry))
   print(rollout)
   client.push_data(rollout, True)
-  time.sleep(5)
+  time.sleep(1)
 client.close()
