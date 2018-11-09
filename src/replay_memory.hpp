@@ -77,6 +77,7 @@ public:
     long new_offset;                   ///< offset for new episode
     long new_length;                   ///< current length of new episode
     long cur_step;                     ///< current length since episode beginning
+    bool not_first;                    ///< current episode is not the first ever
 
     /**
      * MemorySlot for storing raw episodes. It works like a ring-buffer.
@@ -92,7 +93,8 @@ public:
       self_index{index},
       new_offset{0},
       new_length{max_step},
-      cur_step{0}
+      cur_step{0},
+      not_first{false}
     {
       data.resize(max_step);
     }
@@ -272,16 +274,14 @@ public:
       }
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end);
-      update_weight(prm, new_offset, new_length);
-      long len = episode.size() > 0 ? (idx - episode.front().offset) : new_length;
-      len = (len + data.capacity() - 1) % data.capacity() + 1;
-      len = std::min<long>(prm->rollout_len - 1 + n_step, len);
+      if(not_first)
+        update_weight(prm, new_offset, new_length);
+      else // Leave first prm->rollout_len-1 entry's weight as zero
+        update_weight(prm, new_offset + prm->rollout_len - 1, new_length - prm->rollout_len + 1);
+      clear_priority(idx, prm->rollout_len - 1);
+      qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld\n", new_offset, new_length, idx);
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
-      update_weight(prm, idx - len, len);
-      qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
-      qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld, len: %ld\n", new_offset, new_length, idx, len);
-      clear_priority(idx - prm->rollout_len + 1, prm->rollout_len - 1);
-      qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
+      not_first |= is_episode_end; 
       update_global_weight(prm);
     }
 
@@ -446,6 +446,7 @@ public:
         qlog_debug("get_data(): total_weight_sum: %le, weight_sum: %le\n",
             slot_prt.get_weight_sum(), slots[slot_index].prt.get_weight_sum());
         uint32_t entry_idx = slots[slot_index].prt.sample_index();
+        entry_idx = (entry_idx - rollout_len + 1 + max_step) % max_step; // rollout's weight is the last entry's
         // Copy to raw_data
         char * dst = static_cast<char*>(raw_data) + batch_idx * rollout_len * entry_size;
         void * src = slots[slot_index][entry_idx].data();

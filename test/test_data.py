@@ -11,11 +11,6 @@ v = np.ndarray([], dtype=np.float32)
 
 entry = (s,r,p,v)
 
-server = ReplayMemoryServer(entry, 4, 64)
-server.rem.rollout_len = 4
-server.rem.max_episode = 0
-#server.print_info()
-
 def client_main(n_episode=1, first_len=3, last_len=3):
   from copy import deepcopy
   client = ReplayMemoryClient("client_test")
@@ -47,6 +42,9 @@ def client_main(n_episode=1, first_len=3, last_len=3):
   client.close()
 
 def test_01():
+  server = ReplayMemoryServer(entry, 4, 64)
+  server.rem.rollout_len = 4
+  server.rem.max_episode = 0
   batch_size = 1
   #
   threads = []
@@ -66,10 +64,14 @@ def test_01():
   assert traj[1][0] == 3
   assert traj[2][0] == 4
   assert traj[3][0] == 5
+  time.sleep(1)
   server.close() # Prevent auto-deletion
   time.sleep(1)
 
 def test_02():
+  server = ReplayMemoryServer(entry, 4, 64)
+  server.rem.rollout_len = 4
+  server.rem.max_episode = 0
   batch_size = 1
   #
   threads = []
@@ -89,9 +91,10 @@ def test_02():
   assert traj[1][0] == 3
   assert traj[2][0] == 4
   assert traj[3][0] == 5
+  time.sleep(1)
   server.close() # Prevent auto-deletion
   time.sleep(1)
 
 if __name__ == '__main__':
-  test_01()
+  #test_01()
   test_02()

@@ -17,6 +17,8 @@ class ReplayMemoryServer : public Proxy {
 public:
   RM rem;
   const std::string x_descr_pickle;
+  py::object descr;
+  size_t x_nbytes;
   std::unordered_map<std::string, uint32_t> m;
 
   std::string pub_endpoint;
@@ -38,6 +40,9 @@ public:
     pub_hwm = 4;
     rep_hwm = pull_hwm = 1024;
     pull_buf_size = 1048768;
+    //
+    descr = pickle_loads(x_descr_pickle);
+    x_nbytes = get_descr_nbytes(descr);
   }
 
   ~ReplayMemoryServer() {
@@ -223,8 +228,6 @@ public:
    */
   py::tuple py_unserialize_from_mem(void * data)
   {
-    static py::object descr = pickle_loads(x_descr_pickle);
-    static size_t x_nbytes = get_descr_nbytes(descr);
     // Unserialize from data: x
     char * head = static_cast<char*>(data);
     py::object x = descr_unserialize_from_mem(descr, head);

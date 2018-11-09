@@ -3,9 +3,11 @@
 ROOT=..
 ENABLE_DEBUG=0
 PYBIND11_ROOT=$(HOME)/ext/pybind11
+ZMQ_ROOT=$(HOME)/ext/libzmq/prefix
 # libprotobuf.a should be compiled with CXXFLAGS=-fPIC, or the compilation of memoire.so
 # may fail with a relocation error. ("..can not be used when making a shared object;")
 PROTOBUF_STATIC=/usr/local/lib/libprotobuf.a
+ZMQ_STATIC=$(ZMQ_ROOT)/lib/libzmq.a
 
 CXX=g++
 CXXFLAGS=-std=c++11 -O3 -Wall -fvisibility=hidden
@@ -20,15 +22,15 @@ else
 endif
 
 # Default python interpreter
-PYINC=`python -m pybind11 --includes`
+PYINC=`python3 -m pybind11 --includes`
 
 # Build for specific version
 #PY27INC=`python2.7 -m pybind11 --includes`
 #PY34INC=`python3.4 -m pybind11 --includes`
 #PYINC=$(PY27INC)
 
-INCLUDES=$(BACKWARD_MACRO) -I. -I$(ROOT)/src -I$(ROOT)/include -I$(PYBIND11_ROOT)/include 
-LDFLAGS=$(BACKWARD_LD) -lzmq -lpthread
+INCLUDES=$(BACKWARD_MACRO) -I. -I$(ROOT)/src -I$(ROOT)/include -I$(PYBIND11_ROOT)/include -I$(ZMQ_ROOT)/include
+LDFLAGS=$(BACKWARD_LD) -lpthread
 
 ALL=memoire.so memoire.o msg.pb.o
 
@@ -43,7 +45,7 @@ msg.pb.o: msg.pb.cc $(ROOT)/proto/*.proto
 memoire.o: $(ROOT)/memoire.cpp msg.pb.cc $(ROOT)/src/* $(ROOT)/include/*
 	$(CXX) $(CXXFLAGS) -fPIC -c $(INCLUDES) $(PYINC) -o $@ $<
 
-memoire.so: memoire.o msg.pb.o $(PROTOBUF_STATIC)
+memoire.so: memoire.o msg.pb.o $(PROTOBUF_STATIC) $(ZMQ_STATIC)
 	$(CXX) $(CXXFLAGS) -fPIC -shared $(INCLUDES) $(PYINC) -o $@ $^ $(LDFLAGS)
 
 clean:
