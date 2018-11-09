@@ -175,6 +175,9 @@ public:
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
+      double local_diff = 0;
+      double local_ma = prm->ma_sqa;
+      float c = sqrt(prm->ma_sqa/2);
       for(int i=0; i<len; i++) {
         long idx = (off + i) % data.capacity();
         auto prev_value  = data[idx].value(prm).as_array<float>();
@@ -184,14 +187,13 @@ public:
         for(int i=0; i<(int)prev_qvest.size(); i++)
           priority += prm->reward_coeff[i] * (prev_qvest[i] - prev_value[i]);
         // priority is (R-V), now update ma_sqa
-        // TODO: ma_sqa is too hot
-        prm->ma_sqa += 1e-8 * (priority * priority - prm->ma_sqa);
-        prm->ma_sqa = std::max<float>(prm->ma_sqa, EPS);
-        float c = sqrt(prm->ma_sqa/2);
+        local_diff += (priority * priority - local_ma);
         // calculate real priority
         priority = pow(fabs(priority/c), prm->priority_exponent);
         prt.set_weight(idx, priority);
       }
+      prm->ma_sqa += 1e-8 * local_diff;
+      prm->ma_sqa = std::max<float>(prm->ma_sqa, EPS);
     }
     void update_weight(ReplayMemory * prm, const Episode& epi) {
       return update_weight(prm, epi.offset, epi.length);
