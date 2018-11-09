@@ -40,8 +40,9 @@ public:
       uuid{input_uuid},
       start_step{0}
   {
-    sub_hwm = req_hwm = push_hwm = 4;
-    sub_size = 256;
+    sub_hwm = req_hwm = 4;
+    push_hwm = 64;
+    sub_size = 1024;
   }
 
   ~ReplayMemoryClient() {}

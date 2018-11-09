@@ -76,15 +76,21 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("max_step", &RM::max_step)
     .def_readonly("uuid", &RM::uuid)
     .def_readonly("ma_sqa", &RM::ma_sqa)
-    .def_readonly("incre_episode", &RM::incre_episode)
-    .def_readonly("incre_step", &RM::incre_step)
+    .def_readonly("total_episodes", &RM::total_episodes)
+    .def_readonly("total_steps", &RM::total_steps)
     .def_readwrite("max_episode", &RM::max_episode)
     .def_readwrite("priority_exponent", &RM::priority_exponent)
     .def_readwrite("mix_lambda", &RM::mix_lambda)
     .def_readwrite("rollout_len", &RM::rollout_len)
-    .def_readwrite("step_discount", &RM::step_discount)
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("reward_coeff", &RM::reward_coeff)
+    ;
+
+  py::class_<Proxy>(m, "Proxy")
+    .def(py::init<>())
+    .def("rep_proxy_main",   &Proxy::rep_proxy_main,   py::call_guard<py::gil_scoped_release>())
+    .def("pull_proxy_main",  &Proxy::pull_proxy_main,  py::call_guard<py::gil_scoped_release>())
+    .def("pub_proxy_main",   &Proxy::pub_proxy_main,   py::call_guard<py::gil_scoped_release>())
     ;
  
   py::class_<RMC>(m, "ReplayMemoryClient")
@@ -135,10 +141,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("print_info",       &RMS::print_info,         py::call_guard<py::gil_scoped_release>())
     .def("rep_worker_main",  &RMS::rep_worker_main,    py::call_guard<py::gil_scoped_release>())
     .def("pull_worker_main", &RMS::pull_worker_main,   py::call_guard<py::gil_scoped_release>())
-    ;
-
-  py::class_<Proxy>(m, "Proxy")
-    .def(py::init<>())
+    // inherited from Proxy, to share zmq_ctx
     .def("rep_proxy_main",   &Proxy::rep_proxy_main,   py::call_guard<py::gil_scoped_release>())
     .def("pull_proxy_main",  &Proxy::pull_proxy_main,  py::call_guard<py::gil_scoped_release>())
     .def("pub_proxy_main",   &Proxy::pub_proxy_main,   py::call_guard<py::gil_scoped_release>())

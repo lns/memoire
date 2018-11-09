@@ -225,8 +225,12 @@ public:
         cur_step = 0;
         stage = 10;
       }
-      else
-        qassert(stage == 10);
+      if(start_step != cur_step or stage != 10) {
+        qlog_warning("Check failed. Usually this is caused by lost messages (maybe push_buf_size is too short?).");
+        qlog_info("start_step: %u, cur_step: %ld, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
+            start_step, cur_step, is_episode_end, stage, new_offset, new_length);
+      }
+      qassert(stage == 10);
       qassert(start_step == cur_step);
       // Check space
       while(!episode.empty() and (new_length + n_step) > get_new_length()) {
@@ -255,13 +259,13 @@ public:
       new_length = std::min<long>(new_length + n_step, data.capacity());
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
-      prm->incre_step += n_step;
+      prm->total_steps += n_step;
       if(is_episode_end) {
         qassert(stage == 10);
         episode.emplace(new_offset, new_length);
         while(prm->max_episode > 0 and episode.size() > prm->max_episode)
           remove_oldest(prm);
-        prm->incre_episode += 1;
+        prm->total_episodes += 1;
         stage = 0;
       }
       // Update value and weight
@@ -291,7 +295,6 @@ public:
   float priority_exponent;           ///< exponent of priority term (default 0.0)
   float mix_lambda;                  ///< mixture factor for computing multi-step return
   unsigned rollout_len;              ///< rollout length
-  float step_discount;               ///< discount coefficient for state distribution sampling.
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -306,8 +309,8 @@ public:
   qlib::RNG * rng;                   ///< random number generator
   float ma_sqa;                      ///< moving average estimation of squared advantage
 
-  size_t incre_episode;              ///< incremental episode (for statistics in update_counter())
-  size_t incre_step;                 ///< incremental step (for statistics in update_counter())
+  size_t total_episodes;             ///< total number of episodes
+  size_t total_steps;                ///< total number of steps
 
 public:
   /**
@@ -332,13 +335,12 @@ public:
     priority_exponent{0.0},
     mix_lambda{1.0},
     rollout_len{1},
-    step_discount{1.0},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
     ma_sqa{1.0},
-    incre_episode{0},
-    incre_step{0}
+    total_episodes{0},
+    total_steps{0}
   {
     for(size_t i=0; i<n_slot; i++) {
       slots.emplace_back(i, entry_size, max_step, rng);
@@ -398,7 +400,6 @@ public:
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
-    fprintf(f, "step_discount: %lf\n", step_discount);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)

@@ -10,10 +10,10 @@
 #include "hexdump.hpp"
 #include <arpa/inet.h>
 #include "py_serial.hpp"
-#include "zmq_base.hpp"
+#include "proxy.hpp"
 
 template<class RM>
-class ReplayMemoryServer : public ZMQBase {
+class ReplayMemoryServer : public Proxy {
 public:
   RM rem;
   const std::string x_descr_pickle;
@@ -23,6 +23,7 @@ public:
   int pub_hwm;
   int rep_hwm;
   int pull_hwm;
+  size_t pull_buf_size;
 
   std::string logfile_path;
   FILE * logfile;
@@ -34,7 +35,9 @@ public:
       x_descr_pickle{input_descr_pickle},
       logfile{nullptr}
   {
-    pub_hwm = rep_hwm = pull_hwm = 32;
+    pub_hwm = 4;
+    rep_hwm = pull_hwm = 1024;
+    pull_buf_size = 1048768;
   }
 
   ~ReplayMemoryServer() {
@@ -139,7 +142,7 @@ public:
     void * soc = new_zmq_socket(ZMQ_PULL);
     ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &pull_hwm, sizeof(pull_hwm)));
     ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &pull_hwm, sizeof(pull_hwm)));
-    std::string buf(1024, '\0'); // TODO(qing): adjust default size
+    std::string buf(pull_buf_size, '\0');
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
@@ -153,7 +156,8 @@ public:
         return;
       }
       if(not (size <= (int)buf.size())) { // resize and wait for next
-        qlog_warning("Resize buf from %lu to %d. Waiting for next push.\n", buf.size(), size);
+        qlog_warning("Pushed data lost due to insufficient push_buf_size."
+            "Resize buf from %lu to %d. Waiting for next push.\n", buf.size(), size);
         buf.resize(size);
         continue;
       }
@@ -168,14 +172,16 @@ public:
       qlog_debug("Received msg of size(%lu): '%s'\n", buf.size(), msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
       if(msg.type() == proto::PUSH_DATA) {
-        const auto * p = msg.mutable_push_data();
-        rem.add_data(p->slot_index(), (void*)p->data().data(), p->start_step(), p->n_step(), p->is_episode_end());
+        qassert(msg.has_push_data());
+        const auto m = msg.push_data();
+        rem.add_data(m.slot_index(), (void*)m.data().data(), m.start_step(), m.n_step(), m.is_episode_end());
       }
       else if(msg.type() == proto::PUSH_LOG) {
         if(logfile) {
           std::lock_guard<std::mutex> guard(logfile_mutex);
-          const auto * p = msg.mutable_push_log();
-          fwrite((void*)p->log().data(), 1, p->log().size(), logfile);
+          qassert(msg.has_push_log());
+          const auto m = msg.push_log();
+          fwrite((void*)m.log().data(), 1, m.log().size(), logfile);
           fflush(logfile);
         }
       }
