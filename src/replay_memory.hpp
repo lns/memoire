@@ -274,6 +274,8 @@ public:
       update_weight(prm, new_offset, new_length);
       if(not not_first) // Leave first prm->rollout_len-1 entry's weight as zero
         clear_priority(new_offset, prm->rollout_len - 1 + new_length - cur_step);
+      if(prm->no_term_in_rollout)
+        clear_priority(new_offset, prm->rollout_len - 1);
       clear_priority(idx, prm->rollout_len - 1);
       qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld\n", new_offset, new_length, idx);
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
@@ -293,6 +295,7 @@ public:
   float priority_exponent;           ///< exponent of priority term (default 0.0)
   float mix_lambda;                  ///< mixture factor for computing multi-step return
   unsigned rollout_len;              ///< rollout length
+  bool no_term_in_rollout;           ///< no terminal allowed in a rollout
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -327,6 +330,7 @@ public:
     priority_exponent{0.0},
     mix_lambda{1.0},
     rollout_len{1},
+    no_term_in_rollout{false},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -387,6 +391,7 @@ public:
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
+    fprintf(f, "no_term:       %d\n",  no_term_in_rollout);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)
