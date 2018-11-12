@@ -124,7 +124,7 @@ public:
       }
       else
         qthrow("Unknown args->type");
-      rep.SerializeToString(&repbuf);
+      qassert(rep.SerializeToString(&repbuf));
       ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
       qlog_debug("Send msg of size(%lu): '%s'\n", reqbuf.size(), rep.DebugString().c_str());
     }

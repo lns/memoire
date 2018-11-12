@@ -59,7 +59,7 @@ public:
     req.set_type(proto::REQ_GET_INFO);
     req.set_version(req.version());
     req.set_sender(uuid);
-    req.SerializeToString(&reqbuf);
+    qassert(req.SerializeToString(&reqbuf));
     proto::Msg rep;
     do {
       int size;
@@ -111,7 +111,7 @@ public:
     d->set_n_step(n_step);
     d->set_slot_index(info.slot_index());
     d->set_data(data, n_step * info.entry_size());
-    push.SerializeToString(&pushbuf);
+    qassert(push.SerializeToString(&pushbuf));
     qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     if(is_episode_end)
@@ -140,7 +140,7 @@ public:
     push.set_sender(uuid);
     auto * d = push.mutable_push_log();
     d->set_log(msg);
-    push.SerializeToString(&pushbuf);
+    qassert(push.SerializeToString(&pushbuf));
     qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
   }
