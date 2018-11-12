@@ -274,10 +274,9 @@ public:
       }
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end);
-      if(not_first)
-        update_weight(prm, new_offset, new_length);
-      else // Leave first prm->rollout_len-1 entry's weight as zero
-        update_weight(prm, new_offset + prm->rollout_len - 1, new_length - prm->rollout_len + 1);
+      update_weight(prm, new_offset, new_length);
+      if(not not_first) // Leave first prm->rollout_len-1 entry's weight as zero
+        clear_priority(new_offset, prm->rollout_len - 1 + new_length - cur_step);
       clear_priority(idx, prm->rollout_len - 1);
       qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld\n", new_offset, new_length, idx);
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
@@ -446,6 +445,7 @@ public:
         qlog_debug("get_data(): total_weight_sum: %le, weight_sum: %le\n",
             slot_prt.get_weight_sum(), slots[slot_index].prt.get_weight_sum());
         uint32_t entry_idx = slots[slot_index].prt.sample_index();
+        weight[batch_idx] = slots[slot_index].prt.get_weight(entry_idx);
         entry_idx = (entry_idx - rollout_len + 1 + max_step) % max_step; // rollout's weight is the last entry's
         // Copy to raw_data
         char * dst = static_cast<char*>(raw_data) + batch_idx * rollout_len * entry_size;
@@ -459,7 +459,7 @@ public:
         }
         else
           memcpy(dst, src, rollout_len * entry_size);
-        weight[batch_idx] = slots[slot_index].prt.get_weight(entry_idx);
+        qlog_debug("w[%u]: %e\n", batch_idx, weight[batch_idx]);
       }
     }
   }

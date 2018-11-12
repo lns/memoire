@@ -1,5 +1,7 @@
 #pragma once
 
+#define USE_PY
+
 #include <cassert>
 #include <cstring>
 #include <string>
@@ -7,6 +9,12 @@
 #include "array_view.hpp"
 #include "qlog.hpp"
 #include "msg.pb.h"
+#ifdef USE_PY
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+namespace py = pybind11;
+using namespace py::literals;
+#endif
 
 /**
  * A class for an array of runtime-sized, runtime-typed entries. Does not own the memory.
@@ -57,6 +65,16 @@ public:
   {
     make_c_stride();
   }
+  BufView(const proto::BufView& v) { from_pb(&v); }
+#ifdef USE_PY
+  BufView(const py::buffer_info& info, bool keep_ptr)
+    : BufView(keep_ptr ? info.ptr : nullptr, info.itemsize, info.format, info.shape, info.strides) {}
+  BufView(const py::object& b) : BufView(py::cast<py::buffer>(b).request(), true) {}
+
+  py::array new_array() {
+    return py::array(py::dtype(format_), shape_, stride_, nullptr);
+  }
+#endif
 
   void make_c_stride() {
     // Fill stride to be c contiguous
@@ -121,18 +139,24 @@ public:
    * Copy from a piece of memory
    * @param src   can be nullptr to be omitted
    */
-  void from_memory(const void * src) {
-    if(src)
+  size_t from_memory(const void * src) {
+    if(src) {
       std::memcpy(ptr_, src, nbytes());
+      return nbytes();
+    }
+    return 0;
   }
 
   /**
    * Copy to a piece of memory
    * @param dst   can be nullptr to be omitted
    */
-  void to_memory(void * dst) const {
-    if(dst)
+  size_t to_memory(void * dst) const {
+    if(dst) {
       std::memcpy(dst, ptr_, nbytes());
+      return nbytes();
+    }
+    return 0;
   }
 
   /**
@@ -165,6 +189,12 @@ public:
     pb->clear_stride();
     for(unsigned i=0; i<stride_.size(); i++)
       pb->add_stride(stride_[i]);
+  }
+
+  proto::BufView as_pb() const {
+    proto::BufView v;
+    to_pb(&v);
+    return v;
   }
 
   /**

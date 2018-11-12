@@ -9,16 +9,15 @@
 #include "replay_memory.hpp"
 #include "hexdump.hpp"
 #include <arpa/inet.h>
-#include "py_serial.hpp"
 #include "proxy.hpp"
+#include "msg.pb.h"
+#include "py_serial.hpp"
 
 template<class RM>
 class ReplayMemoryServer : public Proxy {
 public:
   RM rem;
-  const std::string x_descr_pickle;
-  py::object descr;
-  size_t x_nbytes;
+  proto::Descriptor desc;
   std::unordered_map<std::string, uint32_t> m;
 
   std::string pub_endpoint;
@@ -32,17 +31,15 @@ public:
   std::mutex logfile_mutex;
 
   ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
-      qlib::RNG * prt_rng, std::string input_descr_pickle)
+      qlib::RNG * prt_rng, std::string desc_serial)
     : rem{vw, max_step, n_slot, prt_rng},
-      x_descr_pickle{input_descr_pickle},
       logfile{nullptr}
   {
     pub_hwm = 4;
     rep_hwm = pull_hwm = 1024;
     pull_buf_size = 1048768;
     //
-    descr = pickle_loads(x_descr_pickle);
-    x_nbytes = get_descr_nbytes(descr);
+    qassert(desc.ParseFromString(desc_serial));
   }
 
   ~ReplayMemoryServer() {
@@ -124,7 +121,7 @@ public:
       if(req.type() == proto::REQ_GET_INFO) {
         rep.set_type(proto::REP_GET_INFO);
         auto * p = rep.mutable_rep_get_info();
-        p->set_x_descr_pickle(x_descr_pickle);
+        *p->mutable_desc() = desc;
         p->set_slot_index(get_slot_index(req.sender()));
         p->set_entry_size(rem.entry_size);
         p->clear_view();
@@ -224,47 +221,48 @@ public:
   }
 
   /**
-   * Unserialize an entry from memory
-   */
-  py::tuple py_unserialize_from_mem(void * data)
-  {
-    // Unserialize from data: x
-    char * head = static_cast<char*>(data);
-    py::object x = descr_unserialize_from_mem(descr, head);
-    head += x_nbytes;
-    py::list entry = py::list(x);
-    for(int i=1; i<5; i++) { // r, p, v, q
-      const BufView& v = rem.view[i];
-      py::array a(py::dtype(v.format_), v.shape_, v.stride_, nullptr);
-      memcpy(a.mutable_data(), head, v.nbytes());
-      head += v.nbytes();
-      entry.append(a);
-    }
-    return py::tuple(entry);
-  }
-
-  /**
    * Get data and weight: (data, weight)
    */
   py::tuple py_get_data(uint32_t batch_size)
   {
-    Mem mem(batch_size * rem.rollout_len * rem.entry_size);
     pyarr_float w({batch_size,});
+    py::list ret;
+    std::vector<BufView> v;
+    // Add bundle
+    for(unsigned i=0; i<desc.view_size(); i++) {
+      BufView t(desc.view(i));
+      t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(rem.rollout_len));
+      t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(batch_size));
+      t.make_c_stride();
+      ret.append(t.new_array());
+      v.emplace_back(py::cast<py::buffer>(ret[i]));
+    }
+    // Add r,p,v,q
+    for(int i=1; i<N_VIEW; i++) {
+      BufView t(rem.view[i]);
+      t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(rem.rollout_len));
+      t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(batch_size));
+      t.make_c_stride();
+      ret.append(t.new_array());
+      v.emplace_back(py::cast<py::buffer>(ret[i]));
+    }
     if(true) {
       py::gil_scoped_release release;
+      // Fill data
+      Mem mem(batch_size * rem.rollout_len * rem.entry_size);
       rem.get_data(mem.data(), w.mutable_data(), batch_size);
-    }
-    py::list ret;
-    for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
-      py::list rollout;
-      for(uint32_t step=0; step<rem.rollout_len; step++) {
-        char * head = (char*)mem.data() + (batch_idx * rem.rollout_len + step) * rem.entry_size;
-        py::tuple entry = py_unserialize_from_mem(head);
-        rollout.append(entry);
+      size_t offset = 0;
+      char * head = static_cast<char*>(mem.data());
+      for(unsigned b=0; b<batch_size; b++) {
+        for(unsigned r=0; r<rem.rollout_len; r++) {
+          for(unsigned i=0; i<ret.size(); i++) {
+            offset += v[i][b][r].from_memory(head + offset); // performance issue of operator[] ?
+          }
+        }
       }
-      ret.append(rollout);
+      qassert(offset == batch_size * rem.rollout_len * rem.entry_size);
     }
-    return py::make_tuple(ret, w);
+    return py::make_tuple(py::tuple(ret), w);
   }
 
 };

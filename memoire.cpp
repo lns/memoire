@@ -34,13 +34,6 @@ static qlib::LCG64 lcg64;
 PYBIND11_MODULE(memoire /* module name */, m) {
   m.doc() = "Memoire, a distributed prioritized replay memory";
 
-  m.def("get_descr", &get_descr);
-  m.def("get_descr_nbytes", &get_descr_nbytes);
-  m.def("descr_serialize", &descr_serialize);
-  m.def("descr_unserialize", &descr_unserialize);
-  m.def("pickle_dumps", &pickle_dumps);
-  m.def("pickle_loads", &pickle_loads);
-
   m.def("get_host_ip", &get_host_ip);
   m.def("get_pid", &getpid);
 
@@ -51,7 +44,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("shape", &BV::shape_)
     .def_readonly("stride", &BV::stride_)
     .def(py::init([](py::buffer b) {
-        return AS_BV(b);
+        return BufView(b);
       }), "buffer"_a)
     .def("__str__", &BV::str)
     .def("as_array", [](BV& self) {
@@ -95,7 +88,6 @@ PYBIND11_MODULE(memoire /* module name */, m) {
  
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const std::string&>(), "uuid"_a)
-    .def_readonly("x_descr_pickle", &RMC::x_descr_pickle)
     .def_readonly("remote_slot_index", &RMC::remote_slot_index)
     .def_readonly("entry_size", &RMC::entry_size)
     .def_readonly("view", &RMC::view)
@@ -123,16 +115,16 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot) {
         // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
         py::list x = py::list(entry)[py::slice(0,-3,1)];
-        py::object descr = get_descr(x);
-        pyarr_uint8 bundle = descr_serialize(x, descr);
-        std::string x_descr_pickle = pickle_dumps(descr);
+        proto::Descriptor desc = get_desc(x);
+        std::string desc_serial;
+        desc.SerializeToString(&desc_serial);
         BV view[N_VIEW];
-        view[0] = AS_BV(bundle);
-        view[1] = AS_BV(entry[entry.size()-3]); // r
-        view[2] = AS_BV(entry[entry.size()-2]); // p
-        view[3] = AS_BV(entry[entry.size()-1]); // v
-        view[4] = AS_BV(entry[entry.size()-1]); // q
-        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,x_descr_pickle)));
+        view[0] = BufView(pyarr_uint8({get_desc_nbytes(desc),})); // bundle
+        view[1] = BufView(entry[entry.size()-3]); // r
+        view[2] = BufView(entry[entry.size()-2]); // p
+        view[3] = BufView(entry[entry.size()-1]); // v
+        view[4] = BufView(entry[entry.size()-1]); // q
+        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,desc_serial)));
       }), "entry"_a, "max_step"_a, "n_slot"_a)
     .def("close",            &RMS::close,              py::call_guard<py::gil_scoped_release>())
     .def("get_data",         &RMS::py_get_data)

@@ -11,8 +11,7 @@
 template<class RM>
 class ReplayMemoryClient : public ZMQBase {
 public:
-  std::string x_descr_pickle;
-  py::object descr;
+  proto::Descriptor desc;
   uint32_t remote_slot_index;
   uint32_t entry_size;
   std::vector<BufView> view;
@@ -93,7 +92,7 @@ public:
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
     const proto::RepGetInfo& info = rep.rep_get_info();
-    x_descr_pickle = info.x_descr_pickle();
+    desc = info.desc();
     remote_slot_index = info.slot_index();
     entry_size = info.entry_size();
     qassert(info.view_size() == N_VIEW);
@@ -229,37 +228,29 @@ public:
   }
 
   void py_serialize_entry_to_mem(py::tuple entry, void * data) {
-    if(x_descr_pickle == "")
-      qlog_error("x_descr_pickle not initialied. Please call get_info() first.\n");
     qassert(view.size() == 5);
     char * head = static_cast<char*>(data);
     // x
-    if(not descr.ptr())
-      descr = pickle_loads(py::bytes(x_descr_pickle)); 
-    head += descr_serialize_to_mem(py::list(entry)[py::slice(0,-3,1)], descr, head);
+    head += serialize_to_mem(py::list(entry)[py::slice(0,-3,1)], head, desc);
     if(true) { // r
-      BufView v = AS_BV(entry[entry.size()-3]);
+      BufView v(entry[entry.size()-3]);
       qassert(v.is_consistent_with(view[1]) or "Shape of r mismatch");
-      v.to_memory(head);
-      head += v.nbytes();
+      head += v.to_memory(head);
     }
     if(true) { // p
-      BufView v = AS_BV(entry[entry.size()-2]);
+      BufView v(entry[entry.size()-2]);
       qassert(v.is_consistent_with(view[2]) or "Shape of p mismatch");
-      v.to_memory(head);
-      head += v.nbytes();
+      head += v.to_memory(head);
     }
     if(true) { // v
-      BufView v = AS_BV(entry[entry.size()-1]);
+      BufView v(entry[entry.size()-1]);
       qassert(v.is_consistent_with(view[3]) or "Shape of v mismatch");
-      v.to_memory(head);
-      head += v.nbytes();
+      head += v.to_memory(head);
     }
     if(true) { // q
-      BufView v = AS_BV(entry[entry.size()-1]);
+      BufView v(entry[entry.size()-1]);
       qassert(v.is_consistent_with(view[4]) or "Shape of q mismatch");
-      v.to_memory(head); // reuse data from v
-      head += v.nbytes();
+      head += v.to_memory(head); // reuse data from v
     }
     qassert(head == static_cast<char*>(data) + entry_size);
   }
