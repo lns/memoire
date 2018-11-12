@@ -43,8 +43,8 @@ public:
 
   void get_info() {
     thread_local void * soc = nullptr;
-    thread_local std::string reqbuf;
-    thread_local std::string repbuf;
+    thread_local std::string reqbuf(1024, '\0');
+    thread_local std::string repbuf(1024, '\0');
     if(not soc) {
       if(req_endpoint == "") {
         qlog_warning("To use %s(), please set client.req_endpoint firstly.\n", __func__);
@@ -54,8 +54,6 @@ public:
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &req_hwm, sizeof(req_hwm)));
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &req_hwm, sizeof(req_hwm)));
       ZMQ_CALL(zmq_connect(soc, req_endpoint.c_str()));
-      reqbuf.resize(1024, '\0');
-      repbuf.resize(1024, '\0'); // TODO(qing): adjust default size
     }
     proto::Msg req;
     req.set_type(proto::REQ_GET_INFO);

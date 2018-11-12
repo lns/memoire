@@ -82,7 +82,7 @@ public:
     void * soc = new_zmq_socket(ZMQ_REP);
     ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &rep_hwm, sizeof(rep_hwm)));
     ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &rep_hwm, sizeof(rep_hwm)));
-    std::string reqbuf(1024, '\0'), repbuf(1024, '\0'); // TODO(qing): adjust default size
+    std::string reqbuf(1024, '\0'), repbuf(1024, '\0');
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
@@ -247,6 +247,7 @@ public:
       }
       qassert(offset == batch_size * rem.rollout_len * rem.entry_size);
     }
+    // (r,p,v,q,*) -> (*,r,p,v,q)
     py::list ret = py::list(data[py::slice(4, data.size(), 1)]);
     for(int i=0; i<4; i++)
       ret.append(data[i]);
