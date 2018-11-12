@@ -27,19 +27,13 @@ message BufView {
   repeated int32 stride = 4;
 }
 
-// Representing the concatenated buffers
-message Descriptor {
-  repeated BufView view = 1;
-}
-
 message ReqGetInfo {
 }
 
 message RepGetInfo {
-  required Descriptor desc = 11;
   required uint32 slot_index = 21;
   required uint32 entry_size = 22;
-  repeated BufView view = 31;
+  repeated BufView view = 31; // r,p,v,q,*
 }
 
 message PushData {
@@ -100,7 +94,7 @@ message Msg {
   }
   required MsgType type = 99;  // What type of message
 
-  optional string version = 100 [default='0.1.2'];// Version of protocal interface
+  optional string version = 100 [default='0.1.3'];// Version of protocal interface
   optional string sender = 101;  // Sender's uuid
   optional string error = 102;  // error message
 };

@@ -17,7 +17,6 @@ template<class RM>
 class ReplayMemoryServer : public Proxy {
 public:
   RM rem;
-  proto::Descriptor desc;
   std::unordered_map<std::string, uint32_t> m;
 
   std::string pub_endpoint;
@@ -30,16 +29,12 @@ public:
   FILE * logfile;
   std::mutex logfile_mutex;
 
-  ReplayMemoryServer(const BufView * vw, size_t max_step, size_t n_slot, 
-      qlib::RNG * prt_rng, std::string desc_serial)
-    : rem{vw, max_step, n_slot, prt_rng},
-      logfile{nullptr}
+  ReplayMemoryServer(const std::deque<BufView>& vw, size_t max_step, size_t n_slot, qlib::RNG * prt_rng)
+    : rem{vw, max_step, n_slot, prt_rng}, logfile{nullptr}
   {
     pub_hwm = 4;
     rep_hwm = pull_hwm = 1024;
     pull_buf_size = 1048768;
-    //
-    qassert(desc.ParseFromString(desc_serial));
   }
 
   ~ReplayMemoryServer() {
@@ -121,11 +116,10 @@ public:
       if(req.type() == proto::REQ_GET_INFO) {
         rep.set_type(proto::REP_GET_INFO);
         auto * p = rep.mutable_rep_get_info();
-        *p->mutable_desc() = desc;
         p->set_slot_index(get_slot_index(req.sender()));
         p->set_entry_size(rem.entry_size);
         p->clear_view();
-        for(int i=0; i<N_VIEW; i++)
+        for(unsigned i=0; i<rem.view.size(); i++)
           rem.view[i].to_pb(p->add_view()); 
       }
       else
@@ -226,25 +220,16 @@ public:
   py::tuple py_get_data(uint32_t batch_size)
   {
     pyarr_float w({batch_size,});
-    py::list ret;
+    py::list data;
     std::vector<BufView> v;
-    // Add bundle
-    for(unsigned i=0; i<desc.view_size(); i++) {
-      BufView t(desc.view(i));
-      t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(rem.rollout_len));
-      t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(batch_size));
-      t.make_c_stride();
-      ret.append(t.new_array());
-      v.emplace_back(py::cast<py::buffer>(ret[i]));
-    }
-    // Add r,p,v,q
-    for(int i=1; i<N_VIEW; i++) {
+    // Add r,p,v,q,*
+    for(unsigned i=0; i<rem.view.size(); i++) {
       BufView t(rem.view[i]);
       t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(rem.rollout_len));
       t.shape_.insert(t.shape_.begin(), static_cast<ssize_t>(batch_size));
       t.make_c_stride();
-      ret.append(t.new_array());
-      v.emplace_back(py::cast<py::buffer>(ret[i]));
+      data.append(t.new_array());
+      v.emplace_back(py::cast<py::buffer>(data[i]));
     }
     if(true) {
       py::gil_scoped_release release;
@@ -255,13 +240,16 @@ public:
       char * head = static_cast<char*>(mem.data());
       for(unsigned b=0; b<batch_size; b++) {
         for(unsigned r=0; r<rem.rollout_len; r++) {
-          for(unsigned i=0; i<ret.size(); i++) {
+          for(unsigned i=0; i<data.size(); i++) {
             offset += v[i][b][r].from_memory(head + offset); // performance issue of operator[] ?
           }
         }
       }
       qassert(offset == batch_size * rem.rollout_len * rem.entry_size);
     }
+    py::list ret = py::list(data[py::slice(4, data.size(), 1)]);
+    for(int i=0; i<4; i++)
+      ret.append(data[i]);
     return py::make_tuple(py::tuple(ret), w);
   }
 

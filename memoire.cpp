@@ -59,12 +59,12 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     ;
 
   py::class_<RM>(m, "ReplayMemory")
-    .def_property_readonly("bundle_buf", &RM::bundle_buf)
     .def_property_readonly("reward_buf", &RM::reward_buf)
     .def_property_readonly("prob_buf",   &RM::prob_buf)
     .def_property_readonly("value_buf",  &RM::value_buf)
     .def_property_readonly("qvest_buf",  &RM::qvest_buf)
     .def_property_readonly("num_slot",   &RM::num_slot)
+    .def_readonly("view", &RM::view)
     .def_readonly("entry_size", &RM::entry_size)
     .def_readonly("max_step", &RM::max_step)
     .def_readonly("uuid", &RM::uuid)
@@ -88,9 +88,9 @@ PYBIND11_MODULE(memoire /* module name */, m) {
  
   py::class_<RMC>(m, "ReplayMemoryClient")
     .def(py::init<const std::string&>(), "uuid"_a)
-    .def_readonly("remote_slot_index", &RMC::remote_slot_index)
-    .def_readonly("entry_size", &RMC::entry_size)
-    .def_readonly("view", &RMC::view)
+    .def_property_readonly("slot_index", [](RMC& rmc) { return rmc.info.slot_index(); })
+    .def_property_readonly("entry_size", [](RMC& rmc) { return rmc.info.entry_size(); })
+    .def_property_readonly("view_size",  [](RMC& rmc) { return rmc.info.view_size(); })
     .def_readwrite("sub_endpoint", &RMC::sub_endpoint)
     .def_readwrite("req_endpoint", &RMC::req_endpoint)
     .def_readwrite("push_endpoint", &RMC::push_endpoint)
@@ -99,6 +99,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("push_hwm", &RMC::push_hwm)
     .def_readwrite("sub_size", &RMC::sub_size)
     .def_readonly("uuid", &RMC::uuid)
+    .def("view", [](RMC& rmc, int i) { return rmc.info.view(i); })
     .def("close",            &RMC::close,              py::call_guard<py::gil_scoped_release>())
     .def("get_info",         &RMC::get_info,           py::call_guard<py::gil_scoped_release>())
     .def("push_data",        &RMC::py_push_data)
@@ -114,17 +115,14 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("pull_hwm", &RMS::pull_hwm)
     .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot) {
         // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
-        py::list x = py::list(entry)[py::slice(0,-3,1)];
-        proto::Descriptor desc = get_desc(x);
-        std::string desc_serial;
-        desc.SerializeToString(&desc_serial);
-        BV view[N_VIEW];
-        view[0] = BufView(pyarr_uint8({get_desc_nbytes(desc),})); // bundle
-        view[1] = BufView(entry[entry.size()-3]); // r
-        view[2] = BufView(entry[entry.size()-2]); // p
-        view[3] = BufView(entry[entry.size()-1]); // v
-        view[4] = BufView(entry[entry.size()-1]); // q
-        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64,desc_serial)));
+        std::deque<BufView> view;
+        view.emplace_back(entry[entry.size()-3]); // r
+        view.emplace_back(entry[entry.size()-2]); // p
+        view.emplace_back(entry[entry.size()-1]); // v
+        view.emplace_back(entry[entry.size()-1]); // q
+        for(int i=0; i<static_cast<int>(entry.size())-3; i++)
+          view.emplace_back(entry[i]);
+        return(std::unique_ptr<RMS>(new RMS(view,max_step,n_slot,&lcg64)));
       }), "entry"_a, "max_step"_a, "n_slot"_a)
     .def("close",            &RMS::close,              py::call_guard<py::gil_scoped_release>())
     .def("get_data",         &RMS::py_get_data)

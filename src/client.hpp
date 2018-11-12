@@ -11,11 +11,6 @@
 template<class RM>
 class ReplayMemoryClient : public ZMQBase {
 public:
-  proto::Descriptor desc;
-  uint32_t remote_slot_index;
-  uint32_t entry_size;
-  std::vector<BufView> view;
-
   const std::string uuid;
   std::string sub_endpoint;
   std::string req_endpoint;
@@ -25,6 +20,7 @@ public:
   int push_hwm;
   size_t sub_size;              ///< default size of buffer for sub
 
+  proto::RepGetInfo info;
   uint32_t start_step;
 
 public:
@@ -35,8 +31,7 @@ public:
    */
   ReplayMemoryClient(
       const std::string input_uuid)
-    : remote_slot_index{~0u},
-      uuid{input_uuid},
+    : uuid{input_uuid},
       start_step{0}
   {
     sub_hwm = req_hwm = 4;
@@ -91,14 +86,7 @@ public:
     qassert(rep.version() == req.version());
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
-    const proto::RepGetInfo& info = rep.rep_get_info();
-    desc = info.desc();
-    remote_slot_index = info.slot_index();
-    entry_size = info.entry_size();
-    qassert(info.view_size() == N_VIEW);
-    view.resize(info.view_size());
-    for(int i=0; i<info.view_size(); i++)
-      view[i].from_pb(&info.view(i));
+    info = rep.rep_get_info();
   }
 
   void push_data(void * data, uint32_t n_step, bool is_episode_end) {
@@ -123,8 +111,8 @@ public:
     d->set_is_episode_end(is_episode_end);
     d->set_start_step(start_step);
     d->set_n_step(n_step);
-    d->set_slot_index(remote_slot_index);
-    d->set_data(data, n_step * entry_size);
+    d->set_slot_index(info.slot_index());
+    d->set_data(data, n_step * info.entry_size());
     push.SerializeToString(&pushbuf);
     qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
@@ -228,39 +216,43 @@ public:
   }
 
   void py_serialize_entry_to_mem(py::tuple entry, void * data) {
-    qassert(view.size() == 5);
+    qassert(info.view_size() == entry.size() + 1);
     char * head = static_cast<char*>(data);
-    // x
-    head += serialize_to_mem(py::list(entry)[py::slice(0,-3,1)], head, desc);
     if(true) { // r
       BufView v(entry[entry.size()-3]);
-      qassert(v.is_consistent_with(view[1]) or "Shape of r mismatch");
+      qassert(v.is_consistent_with(info.view(0)) or "Shape of r mismatch");
       head += v.to_memory(head);
     }
     if(true) { // p
       BufView v(entry[entry.size()-2]);
-      qassert(v.is_consistent_with(view[2]) or "Shape of p mismatch");
+      qassert(v.is_consistent_with(info.view(1)) or "Shape of p mismatch");
       head += v.to_memory(head);
     }
     if(true) { // v
       BufView v(entry[entry.size()-1]);
-      qassert(v.is_consistent_with(view[3]) or "Shape of v mismatch");
+      qassert(v.is_consistent_with(info.view(2)) or "Shape of v mismatch");
       head += v.to_memory(head);
     }
     if(true) { // q
       BufView v(entry[entry.size()-1]);
-      qassert(v.is_consistent_with(view[4]) or "Shape of q mismatch");
+      qassert(v.is_consistent_with(info.view(3)) or "Shape of q mismatch");
       head += v.to_memory(head); // reuse data from v
     }
-    qassert(head == static_cast<char*>(data) + entry_size);
+    // rest
+    for(unsigned i=4; i<info.view_size(); i++) {
+      BufView v(entry[i-4]);
+      qassert(v.is_consistent_with(info.view(i)));
+      head += v.to_memory(head);
+    }
+    qassert(head == static_cast<char*>(data) + info.entry_size());
   }
 
   void py_push_data(py::list data, bool is_episode_end) {
     uint32_t n_step = data.size();
-    Mem mem(entry_size * n_step);
+    Mem mem(info.entry_size() * n_step);
     // Serialize data to memory
     for(unsigned i=0; i<n_step; i++) {
-      char * head = (char*)mem.data() + i * entry_size;
+      char * head = (char*)mem.data() + i * info.entry_size();
       py_serialize_entry_to_mem(data[i], head);
     }
     // Send data to remote

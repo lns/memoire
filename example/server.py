@@ -5,12 +5,13 @@ import numpy as np
 import time, os
 from threading import Thread
 
-s = np.ndarray([2,2], dtype=np.float32)
+s = np.ndarray([1], dtype=np.float32)
+a = np.ndarray([1], dtype=np.float32)
 r = np.ndarray([], dtype=np.float32)
 p = np.ndarray([], dtype=np.float32)
 v = np.ndarray([], dtype=np.float32)
 
-entry = (s,r,p,v)
+entry = (s,a,r,p,v)
 
 server = ReplayMemoryServer(entry, 4, 64)
 server.rem.rollout_len = 4
@@ -18,7 +19,7 @@ server.rem.max_episode = 0
 server.print_info()
 
 try:
-  batch_size = 1
+  batch_size = 2
   #
   threads = []
   threads.append(Thread(target=server.rep_worker_main,  args=("tcp://*:10101", Bind)))

@@ -17,9 +17,7 @@
 #include "prt_tree.hpp"
 #include "buffer_view.hpp"
 
-#define VERSION (20181108ul)
-
-#define N_VIEW (5)
+#define VERSION (20181112ul)
 
 #define EPS (1e-6)
 
@@ -33,7 +31,7 @@ public:
   {
   protected:
     BufView get(int i, const ReplayMemory * p) {
-      assert(0<= i and i < N_VIEW);
+      assert(0<= i and i < static_cast<int>(p->view.size()));
       BufView cur = p->view[i];
       if(i > 0) {
         BufView last = get(i-1, p);
@@ -45,15 +43,14 @@ public:
     }
   public:
     void * data() { return (void*)(this); }
-    BufView bundle(const ReplayMemory * p) { return get(0, p); }
-    BufView reward(const ReplayMemory * p) { return get(1, p); }
-    BufView prob (const ReplayMemory * p)  { return get(2, p); }
-    BufView value(const ReplayMemory * p)  { return get(3, p); }
-    BufView qvest(const ReplayMemory * p)  { return get(4, p); }
+    BufView reward(const ReplayMemory * p) { return get(0, p); }
+    BufView prob (const ReplayMemory * p)  { return get(1, p); }
+    BufView value(const ReplayMemory * p)  { return get(2, p); }
+    BufView qvest(const ReplayMemory * p)  { return get(3, p); }
 
     static size_t nbytes(const ReplayMemory * p) {
       DataEntry * dummy = (DataEntry*)nullptr;
-      auto last = dummy->get(N_VIEW-1, p);
+      auto last = dummy->get(p->view.size()-1, p);
       return ((char*)last.ptr_ - (char*)dummy) + last.nbytes();
     }
   };
@@ -287,7 +284,7 @@ public:
   };
 
 public:
-  const BufView view[N_VIEW];        ///< buffer view of b, r, p, v, q
+  std::deque<BufView> view;          ///< buffer view of r, p, v, q, *
 
   const size_t entry_size;           ///< size of each entry (in bytes)
   const size_t max_step;             ///< max number of steps can be stored
@@ -319,17 +316,11 @@ public:
    * @param m_step      max number of steps in a memory slot
    * @param n_slot      number of slots in this replay memory
    */
-  ReplayMemory(const BufView * vw,
+  ReplayMemory(const std::deque<BufView>& vw,
       size_t m_step,
       size_t n_slot,
       qlib::RNG * prt_rng):
-    view{
-      BufView(nullptr, vw[0].itemsize_, vw[0].format_, vw[0].shape_, vw[0].stride_),
-      BufView(nullptr, vw[1].itemsize_, vw[1].format_, vw[1].shape_, vw[1].stride_),
-      BufView(nullptr, vw[2].itemsize_, vw[2].format_, vw[2].shape_, vw[2].stride_),
-      BufView(nullptr, vw[3].itemsize_, vw[3].format_, vw[3].shape_, vw[3].stride_),
-      BufView(nullptr, vw[4].itemsize_, vw[4].format_, vw[4].shape_, vw[4].stride_),
-    },
+    view{vw},
     entry_size{DataEntry::nbytes(this)},
     max_step{m_step},
     max_episode{0},
@@ -374,27 +365,22 @@ public:
     if(qvest_buf().size() and qvest_buf().shape_ != reward_buf().shape_)
       qlog_error("qvest shape (%s) should match reward shape (%s) or be zero.\n",
           qvest_buf().str().c_str(), reward_buf().str().c_str());
-    qassert(bundle_buf().is_c_contiguous());
     qassert(reward_buf().is_c_contiguous());
     qassert(prob_buf().is_c_contiguous());
     qassert(value_buf().is_c_contiguous());
     qassert(qvest_buf().is_c_contiguous());
   }
 
-  const BufView& bundle_buf() const { return view[0]; }
-  const BufView& reward_buf() const { return view[1]; }
-  const BufView& prob_buf()   const { return view[2]; }
-  const BufView& value_buf()  const { return view[3]; }
-  const BufView& qvest_buf()  const { return view[4]; }
+  const BufView& reward_buf() const { return view[0]; }
+  const BufView& prob_buf()   const { return view[1]; }
+  const BufView& value_buf()  const { return view[2]; }
+  const BufView& qvest_buf()  const { return view[3]; }
 
   void print_info(FILE * f = stderr) const
   {
     fprintf(f, "uuid:          %s\n",  uuid.c_str());
-    fprintf(f, "bundle_buf:    %s\n",  bundle_buf().str().c_str());
-    fprintf(f, "reward_buf:    %s\n",  reward_buf().str().c_str());
-    fprintf(f, "prob_buf:      %s\n",  prob_buf().str().c_str());
-    fprintf(f, "value_buf:     %s\n",  value_buf().str().c_str());
-    fprintf(f, "qvest_buf:     %s\n",  qvest_buf().str().c_str());
+    for(unsigned i=0; i<view.size(); i++)
+      fprintf(f, "view[%u]:      %s\n",  i, view[i].str().c_str());
     fprintf(f, "max_step:      %lu\n", max_step);
     fprintf(f, "num_slot:      %lu\n", num_slot());
     fprintf(f, "max_episode:   %lu\n", max_episode);

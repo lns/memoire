@@ -56,14 +56,16 @@ def test_01():
     th.start()
 
   data, weight = server.get_data(batch_size)
-  assert len(data) == batch_size
+  assert len(data) == len(entry) + 1
   assert len(weight) == batch_size
-  assert len(data[0]) == server.rem.rollout_len
-  traj = data[0]
-  assert traj[0][0] == 2
-  assert traj[1][0] == 3
-  assert traj[2][0] == 4
-  assert traj[3][0] == 5
+  s = data[0]
+  assert len(s) == batch_size
+  assert len(s[0]) == server.rem.rollout_len
+  traj = s[0]
+  assert traj[0] == 2
+  assert traj[1] == 3
+  assert traj[2] == 4
+  assert traj[3] == 5
   time.sleep(1)
   server.close() # Prevent auto-deletion
   time.sleep(1)
@@ -83,14 +85,16 @@ def test_02():
     th.start()
 
   data, weight = server.get_data(batch_size)
-  assert len(data) == batch_size
+  assert len(data) == len(entry) + 1
   assert len(weight) == batch_size
-  assert len(data[0]) == server.rem.rollout_len
-  traj = data[0]
-  assert traj[0][0] == 2
-  assert traj[1][0] == 3
-  assert traj[2][0] == 4
-  assert traj[3][0] == 5
+  s = data[0]
+  assert len(s) == batch_size
+  assert len(s[0]) == server.rem.rollout_len
+  traj = s[0]
+  assert traj[0] == 2
+  assert traj[1] == 3
+  assert traj[2] == 4
+  assert traj[3] == 5
   time.sleep(1)
   server.close() # Prevent auto-deletion
   time.sleep(1)
