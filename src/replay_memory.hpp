@@ -137,11 +137,18 @@ public:
         if(offset < epi.length)
           return offset;
       }
+      print_episode();
+      qlog_error("Invalid sample index(%ld). current offset(%ld), length(%ld)\n", idx, new_offset, new_length);
+      return -1;
+    }
+
+    /**
+     * Print episode with qlog_info()
+     */
+    void print_episode() const {
       for(const auto& epi : episode) {
         qlog_info("episode: (%ld, %ld)\n", epi.offset, epi.length);
       }
-      qlog_error("Invalid sample index(%ld). current offset(%ld), length(%ld)\n", idx, new_offset, new_length);
-      return -1;
     }
 
     /**
@@ -227,11 +234,6 @@ public:
       }
     }
 
-    void update_global_weight(ReplayMemory * prm) {
-      std::lock_guard<std::mutex> guard(prm->rem_mutex);
-      prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
-    }
-
     bool add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
       std::lock_guard<std::mutex> guard(slot_mutex);
       // Check stage
@@ -258,15 +260,19 @@ public:
       qassert(start_step == cur_step);
       // Check space
       while(!episode.empty() and (new_length + n_step) > get_new_length()) {
-        //qlog_info("new_length: %ld, get_new_length: %ld\n", new_length, get_new_length());
-        long len = new_length + n_step - get_new_length();
         auto& front = episode.front();
-        if(len < front.length) {
-          front.offset += len;
-          front.length -= len;
-        }
-        else
+        if(prm->do_padding) {
+          clear_priority(front.offset, front.length);
           episode.pop_front();
+        } else {
+          long len = new_length + n_step - get_new_length();
+          if(len < front.length) {
+            front.offset += len;
+            front.length -= len;
+          }
+          else
+            episode.pop_front();
+        }
       }
       // Write to memory
       char * mem_data = static_cast<char*>(raw_data);
@@ -280,16 +286,17 @@ public:
         len_to_write -= len;
       }
       // Update variables
+      if(prm->do_padding and new_length + n_step > static_cast<long>(data.capacity()))
+        qlog_warning("Due to insufficient capacity of memory slot, the beginning samples for current episode is overwritten, "
+            "which will cause incorrect padding.\n");
       new_length = std::min<long>(new_length + n_step, data.capacity());
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
-      prm->total_steps += n_step;
       if(is_episode_end) {
         qassert(stage == 10);
         episode.emplace_back(new_offset, new_length);
         while(prm->max_episode > 0 and episode.size() > prm->max_episode)
           remove_oldest(prm);
-        prm->total_episodes += 1;
         stage = 0;
       }
       // Update value and weight
@@ -302,7 +309,13 @@ public:
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
       if(is_episode_end)
         step_count += cur_step;
-      update_global_weight(prm);
+      if(true) {
+        std::lock_guard<std::mutex> guard(prm->rem_mutex);
+        prm->total_steps += n_step;
+        if(is_episode_end)
+          prm->total_episodes += 1;
+        prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
+      }
       return true;
     }
 

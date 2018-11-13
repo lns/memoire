@@ -177,6 +177,7 @@ public:
             qlog_error("Unrecoverable failure of add_data(). Data may be lost.\n");
           else
             std::this_thread::yield();
+          retry -= 1;
         }
       }
       else if(msg.type() == proto::PUSH_LOG) {
