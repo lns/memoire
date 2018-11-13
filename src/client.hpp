@@ -35,7 +35,7 @@ public:
       start_step{0}
   {
     sub_hwm = req_hwm = 4;
-    push_hwm = 64;
+    push_hwm = 256;
     sub_size = 1024;
   }
 

@@ -212,7 +212,7 @@ public:
       prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
     }
 
-    void add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
+    bool add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
       std::lock_guard<std::mutex> guard(slot_mutex);
       // Check stage
       if(start_step == 0) {
@@ -230,6 +230,7 @@ public:
         qlog_warning("Check failed. Usually this is caused by lost messages (maybe push_buf_size is too short?).");
         qlog_info("start_step: %u, cur_step: %ld, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
             start_step, cur_step, is_episode_end, stage, new_offset, new_length);
+        return false;
       }
       qassert(stage == 10);
       qassert(start_step == cur_step);
@@ -281,6 +282,7 @@ public:
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
       not_first |= is_episode_end; 
       update_global_weight(prm);
+      return true;
     }
 
   };
@@ -409,10 +411,13 @@ public:
   /**
    * Add sequential data into the replay memory.
    */
-  void add_data(uint32_t slot_index, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
+  bool add_data(uint32_t slot_index, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
     qassert(slot_index < slots.size());
-    slots[slot_index].add_data(this, raw_data, start_step, n_step, is_episode_end);
-    not_empty.notify_one();
+    if(slots[slot_index].add_data(this, raw_data, start_step, n_step, is_episode_end)) { // success
+      not_empty.notify_one();
+      return true;
+    } else
+      return false;
   }
 
   /**

@@ -170,7 +170,14 @@ public:
       if(msg.type() == proto::PUSH_DATA) {
         qassert(msg.has_push_data());
         const auto m = msg.push_data();
-        rem.add_data(m.slot_index(), (void*)m.data().data(), m.start_step(), m.n_step(), m.is_episode_end());
+        int retry = 10;
+        while(not rem.add_data(m.slot_index(), (void*)m.data().data(), m.start_step(), m.n_step(), m.is_episode_end())) {
+          qlog_warning("add_data() failed. Retry left: %d.\n", retry);
+          if(retry <= 0)
+            qlog_error("Unrecoverable failure of add_data(). Data may be lost.\n");
+          else
+            std::this_thread::yield();
+        }
       }
       else if(msg.type() == proto::PUSH_LOG) {
         if(logfile) {
