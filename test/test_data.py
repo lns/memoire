@@ -99,6 +99,129 @@ def test_02():
   server.close() # Prevent auto-deletion
   time.sleep(1)
 
+def test_03():
+  # Test do_padding
+  server = ReplayMemoryServer(entry, 4, 64)
+  server.rem.rollout_len = 4
+  server.rem.max_episode = 0
+  server.rem.do_padding = True
+  batch_size = 1
+  #
+  threads = []
+  threads.append(Thread(target=server.rep_worker_main,  args=("tcp://*:10101", Bind)))
+  threads.append(Thread(target=server.pull_worker_main, args=("tcp://*:10102", Bind)))
+  threads.append(Thread(target=client_main, args=(1,3,0)))
+
+  for th in threads:
+    th.start()
+
+  data, weight = server.get_data(batch_size)
+  assert len(data) == len(entry) + 1
+  assert len(weight) == batch_size
+  s = data[0]
+  assert len(s) == batch_size
+  assert len(s[0]) == server.rem.rollout_len
+  traj = s[0]
+  assert traj[0] == 0
+  assert traj[1] == 0
+  #assert traj[2] == 0
+  #assert traj[3] == 0
+  time.sleep(1)
+  server.close() # Prevent auto-deletion
+  time.sleep(1)
+
+def test_04():
+  # Test not_first
+  server = ReplayMemoryServer(entry, 4, 64)
+  server.rem.rollout_len = 4
+  server.rem.max_episode = 0
+  server.rem.do_padding = False
+  batch_size = 1
+  #
+  threads = []
+  threads.append(Thread(target=server.rep_worker_main,  args=("tcp://*:10101", Bind)))
+  threads.append(Thread(target=server.pull_worker_main, args=("tcp://*:10102", Bind)))
+  threads.append(Thread(target=client_main, args=(1,3,0)))
+
+  for th in threads:
+    th.start()
+
+  def term():
+    time.sleep(3)
+    server.close()
+  Thread(target=term).start()
+
+  data, weight = server.get_data(batch_size)
+  assert False
+
+def test_05():
+  # Test not_first
+  server = ReplayMemoryServer(entry, 4, 64)
+  server.rem.rollout_len = 4
+  server.rem.max_episode = 0
+  server.rem.do_padding = False
+  batch_size = 1
+  #
+  threads = []
+  threads.append(Thread(target=server.rep_worker_main,  args=("tcp://*:10101", Bind)))
+  threads.append(Thread(target=server.pull_worker_main, args=("tcp://*:10102", Bind)))
+  threads.append(Thread(target=client_main, args=(2,3,0)))
+
+  for th in threads:
+    th.start()
+
+  data, weight = server.get_data(batch_size)
+  assert len(data) == len(entry) + 1
+  assert len(weight) == batch_size
+  s = data[0]
+  assert len(s) == batch_size
+  assert len(s[0]) == server.rem.rollout_len
+  traj = s[0]
+  print(traj)
+  assert traj[0] == 2
+  assert traj[1] == 10
+  assert traj[2] == 11
+  assert traj[3] == 12
+  time.sleep(1)
+  server.close() # Prevent auto-deletion
+  time.sleep(1)
+
+def test_06():
+  server = ReplayMemoryServer(entry, 8, 64)
+  server.rem.rollout_len = 4
+  server.rem.max_episode = 0
+  server.rem.do_padding = False
+  batch_size = 1
+  #
+  threads = []
+  threads.append(Thread(target=server.rep_worker_main,  args=("tcp://*:10101", Bind)))
+  threads.append(Thread(target=server.pull_worker_main, args=("tcp://*:10102", Bind)))
+  threads.append(Thread(target=client_main, args=(2,2,0)))
+
+  for th in threads:
+    th.start()
+
+  data, weight = server.get_data(batch_size)
+  assert len(data) == len(entry) + 1
+  assert len(weight) == batch_size
+  s = data[0]
+  assert len(s) == batch_size
+  assert len(s[0]) == server.rem.rollout_len
+  traj = s[0]
+  print(traj)
+  assert traj[0] == 0
+  assert traj[1] == 1
+  assert traj[2] == 10
+  assert traj[3] == 11
+  time.sleep(1)
+  server.close() # Prevent auto-deletion
+  time.sleep(1)
+
 if __name__ == '__main__':
   #test_01()
   test_02()
+  #test_03()
+  #test_04()
+  #test_05()
+  #test_06()
+

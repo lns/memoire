@@ -165,7 +165,7 @@ public:
         std::this_thread::sleep_for(std::chrono::seconds(1));
         continue;
       }
-      qlog_debug("Received msg of size(%lu): '%s'\n", buf.size(), msg.DebugString().c_str());
+      qlog_debug("Received msg of size(%d): '%s'\n", size, msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
       if(msg.type() == proto::PUSH_DATA) {
         qassert(msg.has_push_data());

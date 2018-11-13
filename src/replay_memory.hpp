@@ -66,7 +66,7 @@ public:
   {
   public:
     Vector<DataEntry> data;            ///< Actual data of all samples
-    std::queue<Episode> episode;       ///< Episodes
+    std::deque<Episode> episode;       ///< Episodes
     PrtTree prt;                       ///< Priority tree for sampling
     int stage;                         ///< init -> 0 -> new -> 10 -> close -> 0
     const unsigned self_index;         ///< slot_index in ReplayMemory
@@ -74,7 +74,7 @@ public:
     long new_offset;                   ///< offset for new episode
     long new_length;                   ///< current length of new episode
     long cur_step;                     ///< current length since episode beginning
-    bool not_first;                    ///< current episode is not the first ever
+    long step_count;                   ///< total steps written ever for this slot
 
     /**
      * MemorySlot for storing raw episodes. It works like a ring-buffer.
@@ -91,7 +91,7 @@ public:
       new_offset{0},
       new_length{max_step},
       cur_step{0},
-      not_first{false}
+      step_count{0}
     {
       data.resize(max_step);
     }
@@ -125,6 +125,26 @@ public:
     }
 
     /**
+     * Find the offset in the episode belonged
+     */
+    long get_offset_in_episode(long idx) const {
+      // cur
+      long offset = (idx - new_offset + data.capacity()) % data.capacity(); 
+      if(offset < new_length)
+        return offset;
+      for(const auto& epi : episode) {
+        offset = (idx - epi.offset + data.capacity()) % data.capacity();
+        if(offset < epi.length)
+          return offset;
+      }
+      for(const auto& epi : episode) {
+        qlog_info("episode: (%ld, %ld)\n", epi.offset, epi.length);
+      }
+      qlog_error("Invalid sample index(%ld). current offset(%ld), length(%ld)\n", idx, new_offset, new_length);
+      return -1;
+    }
+
+    /**
      * Remove oldest episode from memory
      */
     void remove_oldest(ReplayMemory * prm) {
@@ -134,7 +154,7 @@ public:
       const auto& front = episode.front();
       clear_priority(front.offset, front.length);
       // pop episode
-      episode.pop();
+      episode.pop_front();
     }
 
     /**
@@ -220,6 +240,8 @@ public:
           // Clear data
           qlog_warning("Discard unfinished episode (offset:%ld, len:%ld) in slot %u.\n", new_offset, new_length, self_index);
           clear_priority(new_offset, new_length);
+          step_count -= new_length;
+          qassert(step_count >= 0);
         }
         new_offset = get_new_offset();
         new_length = 0;
@@ -244,7 +266,7 @@ public:
           front.length -= len;
         }
         else
-          episode.pop();
+          episode.pop_front();
       }
       // Write to memory
       char * mem_data = static_cast<char*>(raw_data);
@@ -264,7 +286,7 @@ public:
       prm->total_steps += n_step;
       if(is_episode_end) {
         qassert(stage == 10);
-        episode.emplace(new_offset, new_length);
+        episode.emplace_back(new_offset, new_length);
         while(prm->max_episode > 0 and episode.size() > prm->max_episode)
           remove_oldest(prm);
         prm->total_episodes += 1;
@@ -273,14 +295,13 @@ public:
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end);
       update_weight(prm, new_offset, new_length);
-      if(not not_first) // Leave first prm->rollout_len-1 entry's weight as zero
-        clear_priority(new_offset, prm->rollout_len - 1 + new_length - cur_step);
-      if(prm->no_term_in_rollout)
-        clear_priority(new_offset, prm->rollout_len - 1);
+      if(not prm->do_padding) // Leave first prm->rollout_len-1 entry's weight as zero
+        clear_priority(new_offset, std::max<long>(prm->rollout_len - 1 - step_count, 0));
       clear_priority(idx, prm->rollout_len - 1);
       qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld\n", new_offset, new_length, idx);
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
-      not_first |= is_episode_end; 
+      if(is_episode_end)
+        step_count += cur_step;
       update_global_weight(prm);
       return true;
     }
@@ -297,7 +318,7 @@ public:
   float priority_exponent;           ///< exponent of priority term (default 0.0)
   float mix_lambda;                  ///< mixture factor for computing multi-step return
   unsigned rollout_len;              ///< rollout length
-  bool no_term_in_rollout;           ///< no terminal allowed in a rollout
+  bool do_padding;                   ///< padding before first entry
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -332,7 +353,7 @@ public:
     priority_exponent{0.0},
     mix_lambda{1.0},
     rollout_len{1},
-    no_term_in_rollout{false},
+    do_padding{false},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -393,7 +414,7 @@ public:
     fprintf(f, "priority_e:    %lf\n", priority_exponent);
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
-    fprintf(f, "no_term:       %d\n",  no_term_in_rollout);
+    fprintf(f, "do_padding:    %d\n",  do_padding);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)
@@ -433,28 +454,37 @@ public:
         qlog_info("get_data(): Waiting for data.\n");
         not_empty.wait(lock, [this](){ return slot_prt.get_weight_sum() > 0; });
       }
-      // Sample the first entry
+      // Sample the last entry
       uint32_t slot_index = slot_prt.sample_index();
       lock.unlock();
       if(true) {
         std::lock_guard<std::mutex> guard(slots[slot_index].slot_mutex);
         qlog_debug("get_data(): total_weight_sum: %le, weight_sum: %le\n",
             slot_prt.get_weight_sum(), slots[slot_index].prt.get_weight_sum());
-        uint32_t entry_idx = slots[slot_index].prt.sample_index();
-        weight[batch_idx] = slots[slot_index].prt.get_weight(entry_idx);
-        entry_idx = (entry_idx - rollout_len + 1 + max_step) % max_step; // rollout's weight is the last entry's
-        // Copy to raw_data
+        uint32_t last_idx = slots[slot_index].prt.sample_index();
+        weight[batch_idx] = slots[slot_index].prt.get_weight(last_idx); // rollout's weight is the last entry's
+        long len = rollout_len - 1;
+        if(do_padding)
+          len = std::min<long>(rollout_len - 1, slots[slot_index].get_offset_in_episode(last_idx));
+        uint32_t entry_idx = (last_idx - len + max_step) % max_step;
+        len += 1;
         char * dst = static_cast<char*>(raw_data) + batch_idx * rollout_len * entry_size;
         void * src = slots[slot_index][entry_idx].data();
-        if(entry_idx + rollout_len > max_step) {
-          long len = max_step - entry_idx;
-          memcpy(dst, src, len * entry_size);
-          dst += len * entry_size;
+        // Padding with first state
+        for(int i=0; i<rollout_len - len; i++) {
+          memcpy(dst, src, entry_size);
+          dst += entry_size;
+        }
+        // Copy to raw_data
+        if(entry_idx + len > static_cast<long>(max_step)) {
+          long write_len = max_step - entry_idx;
+          memcpy(dst, src, write_len * entry_size);
+          dst += write_len * entry_size;
           src = slots[slot_index][0].data();
-          memcpy(dst, src, (rollout_len - len) * entry_size);
+          memcpy(dst, src, (len - write_len) * entry_size);
         }
         else
-          memcpy(dst, src, rollout_len * entry_size);
+          memcpy(dst, src, len * entry_size);
         qlog_debug("w[%u]: %e\n", batch_idx, weight[batch_idx]);
       }
     }
