@@ -92,6 +92,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_property_readonly("slot_index", [](RMC& rmc) { return rmc.info.slot_index(); })
     .def_property_readonly("entry_size", [](RMC& rmc) { return rmc.info.entry_size(); })
     .def_property_readonly("view_size",  [](RMC& rmc) { return rmc.info.view_size(); })
+    .def_property("push_length", &RMC::get_push_length, &RMC::set_push_length)
     .def_readwrite("sub_endpoint", &RMC::sub_endpoint)
     .def_readwrite("req_endpoint", &RMC::req_endpoint)
     .def_readwrite("push_endpoint", &RMC::push_endpoint)
@@ -103,9 +104,10 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def("view", [](RMC& rmc, int i) { return rmc.info.view(i); })
     .def("close",            &RMC::close,              py::call_guard<py::gil_scoped_release>())
     .def("get_info",         &RMC::get_info,           py::call_guard<py::gil_scoped_release>())
-    .def("push_data",        &RMC::py_push_data)
+    .def("add_entry",        &RMC::py_add_entry)
     .def("sub_bytes",        &RMC::py_sub_bytes)
     .def("push_log",         &RMC::push_log,           py::call_guard<py::gil_scoped_release>())
+    .def("push_worker_main", &RMC::push_worker_main,   py::call_guard<py::gil_scoped_release>())
     ;
 
   py::class_<RMS>(m, "ReplayMemoryServer")

@@ -1,12 +1,14 @@
 #pragma once
 
 #include <iostream>
+#include <memory>
 #include "utils.hpp"
 #include "replay_memory.hpp"
 #include "qlog.hpp"
 #include "msg.pb.h"
 #include "py_serial.hpp"
 #include "zmq_base.hpp"
+#include "bounded_vector.hpp"
 
 template<class RM>
 class ReplayMemoryClient : public ZMQBase {
@@ -19,9 +21,14 @@ public:
   int req_hwm;
   int push_hwm;
   size_t sub_size;              ///< default size of buffer for sub
+  size_t push_length;
 
   proto::RepGetInfo info;
   uint32_t start_step;
+
+protected:
+  typedef BoundedVector<bool, typename RM::DataEntry> Queue;
+  std::unique_ptr<Queue> queue;
 
 public:
   /**
@@ -37,9 +44,19 @@ public:
     sub_hwm = req_hwm = 4;
     push_hwm = 256;
     sub_size = 1024;
+    push_length = 32;
   }
 
   ~ReplayMemoryClient() {}
+
+  size_t get_push_length() const {
+    return push_length;
+  }
+
+  void set_push_length(size_t new_length) {
+    push_length = new_length;
+    queue = std::unique_ptr<Queue>(new Queue(info.entry_size(), 4*push_length));
+  }
 
   void get_info() {
     thread_local void * soc = nullptr;
@@ -85,6 +102,7 @@ public:
     qassert(rep.type() == proto::REP_GET_INFO);
     // Get info
     info = rep.rep_get_info();
+    set_push_length(push_length); // resize queue
   }
 
   void push_data(void * data, uint32_t n_step, bool is_episode_end) {
@@ -213,6 +231,7 @@ public:
     return py::bytes(ret);
   }
 
+  /*
   void py_serialize_entry_to_mem(py::tuple entry, void * data) {
     qassert(info.view_size() == entry.size() + 1);
     char * head = static_cast<char*>(data);
@@ -257,6 +276,45 @@ public:
     if(true) {
       py::gil_scoped_release release;
       push_data(mem.data(), n_step, is_episode_end);
+    }
+  }
+  */
+
+  void py_add_entry(py::tuple entry, bool is_episode_end) {
+    thread_local Mem mem(info.entry_size());
+    std::vector<BufView> view;
+    view.emplace_back(entry[entry.size()-3]); // r
+    view.emplace_back(entry[entry.size()-2]); // p
+    view.emplace_back(entry[entry.size()-1]); // v
+    view.emplace_back(entry[entry.size()-1]); // q
+    for(unsigned i=4; i<info.view_size(); i++)
+      view.emplace_back(entry[i-4]);
+    if(true) {
+      py::gil_scoped_release release;
+      // Check & Copy
+      char * head = reinterpret_cast<char*>(mem.data());
+      for(unsigned i=0; i<view.size(); i++) {
+        qassert(view[i].is_consistent_with(info.view(i)));
+        head += view[i].to_memory(head);
+      }
+      queue->put(is_episode_end, reinterpret_cast<typename RM::DataEntry*>(mem.data()));
+    }
+  }
+
+  void push_worker_main()
+  {
+    Mem mem(info.entry_size() * push_length);
+    size_t count = 0;
+    char * head = reinterpret_cast<char*>(mem.data());
+    while(true) {
+      bool is_term;
+      qassert(count < push_length);
+      queue->get(is_term, reinterpret_cast<typename RM::DataEntry*>(head + count * info.entry_size()));
+      count += 1;
+      if(is_term or count == push_length) {
+        push_data(mem.data(), count, is_term);
+        count = 0;
+      }
     }
   }
 

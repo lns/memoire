@@ -17,7 +17,7 @@
 #include "prt_tree.hpp"
 #include "buffer_view.hpp"
 
-#define VERSION (20181112ul)
+#define VERSION (20181114ul)
 
 #define EPS (1e-6)
 
@@ -240,7 +240,9 @@ public:
       if(start_step == 0) {
         if(stage != 0) {
           // Clear data
-          qlog_warning("Discard unfinished episode (offset:%ld, len:%ld) in slot %u.\n", new_offset, new_length, self_index);
+          qlog_warning("[slot:%d] Discard unfinished episode (offset:%ld, len:%ld).\n", self_index, new_offset, new_length);
+          qlog_info("start_step: %u, cur_step: %ld, n_step: %u, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
+              start_step, cur_step, n_step, is_episode_end, stage, new_offset, new_length);
           clear_priority(new_offset, new_length);
           step_count -= new_length;
           qassert(step_count >= 0);
@@ -251,9 +253,9 @@ public:
         stage = 10;
       }
       if(start_step != cur_step or stage != 10) {
-        qlog_warning("Check failed. Usually this is caused by lost messages (maybe push_buf_size is too short?).");
-        qlog_info("start_step: %u, cur_step: %ld, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
-            start_step, cur_step, is_episode_end, stage, new_offset, new_length);
+        qlog_warning("[slot:%d] Check failed. Usually this is caused by lost messages.", self_index);
+        qlog_info("start_step: %u, cur_step: %ld, n_step: %u, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
+            start_step, cur_step, n_step, is_episode_end, stage, new_offset, new_length);
         return false;
       }
       qassert(stage == 10);

@@ -11,33 +11,30 @@ v = np.ndarray([], dtype=np.float32)
 
 entry = (s,r,p,v)
 
-def client_main(n_episode=1, first_len=3, last_len=3):
+def client_main(n_episode=1, push_length=3, next_length=3):
   from copy import deepcopy
   client = ReplayMemoryClient("client_test")
   client.req_endpoint = "tcp://localhost:10101"
   client.push_endpoint = "tcp://localhost:10102"
   client.get_info()
+  client.push_length = push_length
+
+  Thread(target=client.push_worker_main).start()
 
   for j in range(n_episode):
-    rollout = []
-    for i in range(10*j+0,10*j+first_len):
+    for i in range(10*j+0,10*j+push_length):
       entry[0].fill(i)
       entry[1].fill(1)
       entry[2].fill(0)
       entry[3].fill(-1)
-      rollout.append(deepcopy(entry))
-    #print(rollout)
-    client.push_data(rollout, False)
+      client.add_entry(entry, False)
     time.sleep(1)
-    rollout = []
-    for i in range(10*j+first_len,10*j+(first_len+last_len)):
+    for i in range(10*j+push_length,10*j+push_length+next_length):
       entry[0].fill(i)
       entry[1].fill(1)
       entry[2].fill(0)
       entry[3].fill(-1)
-      rollout.append(deepcopy(entry))
-    #print(rollout)
-    client.push_data(rollout, True)
+      client.add_entry(entry, i==10*j+push_length+next_length-1)
     time.sleep(1)
   client.close()
 

@@ -174,9 +174,9 @@ public:
         while(not rem.add_data(m.slot_index(), (void*)m.data().data(), m.start_step(), m.n_step(), m.is_episode_end())) {
           qlog_warning("add_data() failed. Retry left: %d.\n", retry);
           if(retry <= 0)
-            qlog_error("Unrecoverable failure of add_data(). Data may be lost.\n");
+            qlog_warning("Unrecoverable failure of add_data(). Data may be lost.\n");
           else
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
           retry -= 1;
         }
       }
