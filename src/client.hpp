@@ -6,7 +6,6 @@
 #include "replay_memory.hpp"
 #include "qlog.hpp"
 #include "msg.pb.h"
-#include "py_serial.hpp"
 #include "zmq_base.hpp"
 #include "bounded_vector.hpp"
 
@@ -230,55 +229,6 @@ public:
     }
     return py::bytes(ret);
   }
-
-  /*
-  void py_serialize_entry_to_mem(py::tuple entry, void * data) {
-    qassert(info.view_size() == entry.size() + 1);
-    char * head = static_cast<char*>(data);
-    if(true) { // r
-      BufView v(entry[entry.size()-3]);
-      qassert(v.is_consistent_with(info.view(0)) or "Shape of r mismatch");
-      head += v.to_memory(head);
-    }
-    if(true) { // p
-      BufView v(entry[entry.size()-2]);
-      qassert(v.is_consistent_with(info.view(1)) or "Shape of p mismatch");
-      head += v.to_memory(head);
-    }
-    if(true) { // v
-      BufView v(entry[entry.size()-1]);
-      qassert(v.is_consistent_with(info.view(2)) or "Shape of v mismatch");
-      head += v.to_memory(head);
-    }
-    if(true) { // q
-      BufView v(entry[entry.size()-1]);
-      qassert(v.is_consistent_with(info.view(3)) or "Shape of q mismatch");
-      head += v.to_memory(head); // reuse data from v
-    }
-    // rest
-    for(unsigned i=4; i<info.view_size(); i++) {
-      BufView v(entry[i-4]);
-      qassert(v.is_consistent_with(info.view(i)));
-      head += v.to_memory(head);
-    }
-    qassert(head == static_cast<char*>(data) + info.entry_size());
-  }
-
-  void py_push_data(py::list data, bool is_episode_end) {
-    uint32_t n_step = data.size();
-    Mem mem(info.entry_size() * n_step);
-    // Serialize data to memory
-    for(unsigned i=0; i<n_step; i++) {
-      char * head = (char*)mem.data() + i * info.entry_size();
-      py_serialize_entry_to_mem(data[i], head);
-    }
-    // Send data to remote
-    if(true) {
-      py::gil_scoped_release release;
-      push_data(mem.data(), n_step, is_episode_end);
-    }
-  }
-  */
 
   void py_add_entry(py::tuple entry, bool is_episode_end) {
     thread_local Mem mem(info.entry_size());
