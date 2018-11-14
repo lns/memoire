@@ -25,7 +25,6 @@ public:
   int pull_hwm;
   size_t pull_buf_size;
 
-  std::string logfile_path;
   FILE * logfile;
   std::mutex logfile_mutex;
 
@@ -121,6 +120,8 @@ public:
         p->clear_view();
         for(unsigned i=0; i<rem.view.size(); i++)
           rem.view[i].to_pb(p->add_view()); 
+        // Clear slot
+        rem.clear(p->slot_index());
       }
       else
         qthrow("Unknown args->type");

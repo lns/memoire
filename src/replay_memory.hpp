@@ -135,15 +135,15 @@ public:
         if(offset < epi.length)
           return offset;
       }
-      print_episode();
+      print_episodes();
       qlog_error("Invalid sample index(%ld). current offset(%ld), length(%ld)\n", idx, new_offset, new_length);
       return -1;
     }
 
     /**
-     * Print episode with qlog_info()
+     * Print episodes with qlog_info()
      */
-    void print_episode() const {
+    void print_episodes() const {
       for(const auto& epi : episode) {
         qlog_info("episode: (%ld, %ld)\n", epi.offset, epi.length);
       }
@@ -230,6 +230,27 @@ public:
         long idx = (offset + i) % data.capacity();
         prt.set_weight(idx, 0);
       }
+    }
+
+    void clear(ReplayMemory * prm) {
+      std::lock_guard<std::mutex> guard(slot_mutex);
+      size_t cleared = 0;
+      clear_priority(new_offset, new_length);
+      cleared += cur_step;
+      while(not episode.empty()) {
+        const auto& front = episode.front();
+        clear_priority(front.offset, front.length);
+        episode.pop_front();
+        cleared += front.length;
+      }
+      if(true) {
+        std::lock_guard<std::mutex> guard(prm->rem_mutex);
+        prm->total_steps -= cleared;
+        prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
+      }
+      new_offset = get_new_offset();
+      new_length = 0;
+      cur_step = 0;
     }
 
     void discard_data(ReplayMemory * prm) {
@@ -329,6 +350,7 @@ public:
   float mix_lambda;                  ///< mixture factor for computing multi-step return
   unsigned rollout_len;              ///< rollout length
   bool do_padding;                   ///< padding before first entry
+  bool no_replacement;               ///< sampling without replacement
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -364,6 +386,7 @@ public:
     mix_lambda{1.0},
     rollout_len{1},
     do_padding{false},
+    no_replacement{false},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -425,6 +448,7 @@ public:
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
     fprintf(f, "do_padding:    %d\n",  do_padding);
+    fprintf(f, "no_replacement:%d\n",  no_replacement);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)
@@ -459,8 +483,14 @@ public:
   }
 
   /**
+   * Clear slot
+   */
+  void clear(uint32_t slot_index) {
+    slots[slot_index].clear(this);
+  }
+
+  /**
    * Get batch_size * rollout data samples. Currently this is sampling with replacement.
-   * TODO(qing) sampling without replacement.
    * TODO(qing) should we use average priority over rollout for sampling?
    */
   void get_data(void * raw_data, float * weight, uint32_t batch_size) {
@@ -471,15 +501,20 @@ public:
         qlog_info("get_data(): Waiting for data.\n");
         not_empty.wait(lock, [this](){ return slot_prt.get_weight_sum() > 0; });
       }
-      // Sample the last entry
+      // Sample the memory slot.
       uint32_t slot_index = slot_prt.sample_index();
+      // NOTE: If we want to sample the old/slows slot less often, we could decay the slot's priority here.
+      //       e.g. slot_prt.set_weight(slot_index, 0.99 * slot_prt[slot_index].get_weight() )
+      //       Also, in sampling without replacement mode, the priority of slot_index is also decreased.
       lock.unlock();
       if(true) {
         std::lock_guard<std::mutex> guard(slots[slot_index].slot_mutex);
         qlog_debug("get_data(): total_weight_sum: %le, weight_sum: %le\n",
             slot_prt.get_weight_sum(), slots[slot_index].prt.get_weight_sum());
         uint32_t last_idx = slots[slot_index].prt.sample_index();
-        weight[batch_idx] = slots[slot_index].prt.get_weight(last_idx); // rollout's weight is the last entry's
+        weight[batch_idx] = slots[slot_index].prt.get_weight(last_idx); // rollout's weight determined by the last entry
+        if(no_replacement)
+          slots[slot_index].prt.set_weight(last_idx, 0);
         long len = rollout_len - 1;
         if(do_padding)
           len = std::min<long>(rollout_len - 1, slots[slot_index].get_offset_in_episode(last_idx));
@@ -503,6 +538,10 @@ public:
         else
           memcpy(dst, src, len * entry_size);
         qlog_debug("w[%u]: %e\n", batch_idx, weight[batch_idx]);
+      }
+      if(no_replacement) {
+        lock.lock();
+        slot_prt.set_weight(slot_index, slots[slot_index].prt.get_weight_sum());
       }
     }
   }

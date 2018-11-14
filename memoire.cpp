@@ -76,6 +76,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("mix_lambda", &RM::mix_lambda)
     .def_readwrite("rollout_len", &RM::rollout_len)
     .def_readwrite("do_padding", &RM::do_padding)
+    .def_readwrite("no_replacement", &RM::no_replacement)
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("reward_coeff", &RM::reward_coeff)
     ;
@@ -116,6 +117,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("pub_hwm", &RMS::pub_hwm)
     .def_readwrite("rep_hwm", &RMS::rep_hwm)
     .def_readwrite("pull_hwm", &RMS::pull_hwm)
+    .def_readwrite("pull_buf_size", &RMS::pull_buf_size)
     .def(py::init([](py::tuple entry, size_t max_step, size_t n_slot) {
         // We require entry[-3] is reward, entry[-2] is prob, and entry[-1] is value.
         std::deque<BufView> view;

@@ -21,7 +21,9 @@ struct BoundedVector {
   std::condition_variable not_full;
   std::condition_variable not_empty;
 
-  BoundedVector(unsigned entry_size, int capacity) : buf{entry_size}, len{capacity}, front{0}, rear{0}, count{0} {
+  BoundedVector(unsigned entry_size, int capacity)
+    : buf{entry_size}, len{capacity}, front{0}, rear{0}, count{0}
+  {
     vec.resize(len);
     buf.resize(len);
   }
