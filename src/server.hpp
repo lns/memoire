@@ -175,10 +175,13 @@ public:
           qlog_warning("add_data() failed. Retry left: %d.\n", retry);
           if(retry <= 0) {
             qlog_warning("Unrecoverable failure of add_data(). Data may be lost.\n");
+            rem.discard_data(m.slot_index());
             break;
           }
-          else
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            //std::this_thread::yield();
+          }
           retry -= 1;
         }
       }

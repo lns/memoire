@@ -23,7 +23,6 @@ public:
   size_t push_length;
 
   proto::RepGetInfo info;
-  uint32_t start_step;
 
 protected:
   typedef BoundedVector<bool, typename RM::DataEntry> Queue;
@@ -37,8 +36,7 @@ public:
    */
   ReplayMemoryClient(
       const std::string input_uuid)
-    : uuid{input_uuid},
-      start_step{0}
+    : uuid{input_uuid}
   {
     sub_hwm = req_hwm = 4;
     push_hwm = 256;
@@ -107,6 +105,7 @@ public:
   void push_data(void * data, uint32_t n_step, bool is_episode_end) {
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
+    thread_local uint32_t start_step = 0;
     if(not soc) {
       if(push_endpoint == "") {
         qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
@@ -131,6 +130,8 @@ public:
     qassert(push.SerializeToString(&pushbuf));
     qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
+    if(is_episode_end)
+      qlog_info("Episode length: %u, last_trunk: %u\n", start_step+n_step, n_step);
     if(is_episode_end)
       start_step = 0;
     else
@@ -251,8 +252,8 @@ public:
     }
   }
 
-  void push_worker_main()
-  {
+  void push_worker_main() {
+    // This mainloop should be executed by only one thread.
     Mem mem(info.entry_size() * push_length);
     size_t count = 0;
     char * head = reinterpret_cast<char*>(mem.data());

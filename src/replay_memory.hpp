@@ -68,7 +68,6 @@ public:
     Vector<DataEntry> data;            ///< Actual data of all samples
     std::deque<Episode> episode;       ///< Episodes
     PrtTree prt;                       ///< Priority tree for sampling
-    int stage;                         ///< init -> 0 -> new -> 10 -> close -> 0
     const unsigned self_index;         ///< slot_index in ReplayMemory
     std::mutex slot_mutex;             ///< mutex for this memory slot
     long new_offset;                   ///< offset for new episode
@@ -86,10 +85,9 @@ public:
       data{entry_size},
       episode{},
       prt{prt_rng, static_cast<int>(max_step)},
-      stage{0},
       self_index{index},
       new_offset{0},
-      new_length{max_step},
+      new_length{0},
       cur_step{0},
       step_count{0}
     {
@@ -115,7 +113,7 @@ public:
     }
 
     /**
-     * Get length for a new episode
+     * Get length(capacity) for a new episode
      */
     long get_new_length() const {
       long length = data.capacity();
@@ -234,31 +232,28 @@ public:
       }
     }
 
+    void discard_data(ReplayMemory * prm) {
+      std::lock_guard<std::mutex> guard(slot_mutex);
+      qlog_warning("[slot:%d] Discard unfinished episode (offset:%ld, len:%ld, step:%ld).\n",
+          self_index, new_offset, new_length, cur_step);
+      clear_priority(new_offset, new_length);
+      if(true) {
+        std::lock_guard<std::mutex> guard(prm->rem_mutex);
+        prm->total_steps -= cur_step;
+        prm->slot_prt.set_weight(self_index, prt.get_weight_sum());
+      }
+      new_offset = get_new_offset();
+      new_length = 0;
+      cur_step = 0;
+    }
+
     bool add_data(ReplayMemory * prm, void * raw_data, uint32_t start_step, uint32_t n_step, bool is_episode_end) {
       std::lock_guard<std::mutex> guard(slot_mutex);
-      // Check stage
-      if(start_step == 0) {
-        if(stage != 0) {
-          // Clear data
-          qlog_warning("[slot:%d] Discard unfinished episode (offset:%ld, len:%ld).\n", self_index, new_offset, new_length);
-          qlog_info("start_step: %u, cur_step: %ld, n_step: %u, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
-              start_step, cur_step, n_step, is_episode_end, stage, new_offset, new_length);
-          clear_priority(new_offset, new_length);
-          step_count -= new_length;
-          qassert(step_count >= 0);
-        }
-        new_offset = get_new_offset();
-        new_length = 0;
-        cur_step = 0;
-        stage = 10;
-      }
-      if(start_step != cur_step or stage != 10) {
-        qlog_warning("[slot:%d] Check failed. Usually this is caused by lost messages.", self_index);
-        qlog_info("start_step: %u, cur_step: %ld, n_step: %u, is_end: %d, stage: %d, offset: %ld, length: %ld\n",
-            start_step, cur_step, n_step, is_episode_end, stage, new_offset, new_length);
+      if(start_step != cur_step) { // Data lost, usually caused by out of order data
+        qlog_warning("[slot:%d] Check failed: start_step:%u n_step:%u is_end:%d cur_step:%ld length:%ld offset:%ld\n",
+            self_index, start_step, n_step, is_episode_end, cur_step, new_length, new_offset);
         return false;
       }
-      qassert(stage == 10);
       qassert(start_step == cur_step);
       // Check space
       while(!episode.empty() and (new_length + n_step) > get_new_length()) {
@@ -294,13 +289,6 @@ public:
       new_length = std::min<long>(new_length + n_step, data.capacity());
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
-      if(is_episode_end) {
-        qassert(stage == 10);
-        episode.emplace_back(new_offset, new_length);
-        while(prm->max_episode > 0 and episode.size() > prm->max_episode)
-          remove_oldest(prm);
-        stage = 0;
-      }
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end);
       update_weight(prm, new_offset, new_length);
@@ -309,8 +297,15 @@ public:
       clear_priority(idx, prm->rollout_len - 1);
       qlog_debug("new_offset: %ld, new_length: %ld, idx: %ld\n", new_offset, new_length, idx);
       qlog_debug("prt.get_weight_sum(): %le\n", prt.get_weight_sum());
-      if(is_episode_end)
+      if(is_episode_end) {
         step_count += cur_step;
+        episode.emplace_back(new_offset, new_length);
+        while(prm->max_episode > 0 and episode.size() > prm->max_episode)
+          remove_oldest(prm);
+        new_offset = get_new_offset();
+        new_length = 0;
+        cur_step = 0;
+      }
       if(true) {
         std::lock_guard<std::mutex> guard(prm->rem_mutex);
         prm->total_steps += n_step;
@@ -454,6 +449,13 @@ public:
       return true;
     } else
       return false;
+  }
+
+  /**
+   * Discard current episode in the memory slot
+   */
+  void discard_data(uint32_t slot_index) {
+    slots[slot_index].discard_data(this);
   }
 
   /**
