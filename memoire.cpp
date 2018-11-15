@@ -76,7 +76,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("mix_lambda", &RM::mix_lambda)
     .def_readwrite("rollout_len", &RM::rollout_len)
     .def_readwrite("do_padding", &RM::do_padding)
-    .def_readwrite("no_replacement", &RM::no_replacement)
+    .def_readwrite("priority_decay", &RM::priority_decay)
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("reward_coeff", &RM::reward_coeff)
     ;

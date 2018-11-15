@@ -135,8 +135,9 @@ public:
         if(offset < epi.length)
           return offset;
       }
+      qlog_warning("Invalid sample index(%ld): current offset(%ld), length(%ld)\n", idx, new_offset, new_length);
       print_episodes();
-      qlog_error("Invalid sample index(%ld). current offset(%ld), length(%ld)\n", idx, new_offset, new_length);
+      qassert(false and "Invalid sample index.");
       return -1;
     }
 
@@ -350,7 +351,7 @@ public:
   float mix_lambda;                  ///< mixture factor for computing multi-step return
   unsigned rollout_len;              ///< rollout length
   bool do_padding;                   ///< padding before first entry
-  bool no_replacement;               ///< sampling without replacement
+  float priority_decay;              ///< decay factor for sample priority
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -386,7 +387,7 @@ public:
     mix_lambda{1.0},
     rollout_len{1},
     do_padding{false},
-    no_replacement{false},
+    priority_decay{1.0},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -448,7 +449,7 @@ public:
     fprintf(f, "mix_lambda:    %lf\n", mix_lambda);
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
     fprintf(f, "do_padding:    %d\n",  do_padding);
-    fprintf(f, "no_replacement:%d\n",  no_replacement);
+    fprintf(f, "priority_decay:%lf\n", priority_decay);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)
@@ -497,7 +498,7 @@ public:
     qassert(rollout_len <= max_step);
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
       std::unique_lock<std::mutex> lock(rem_mutex);
-      if(slot_prt.get_weight_sum() <= 0) {
+      if(slot_prt.get_weight_sum() <= 0) { // EPS?
         qlog_info("get_data(): Waiting for data.\n");
         not_empty.wait(lock, [this](){ return slot_prt.get_weight_sum() > 0; });
       }
@@ -506,6 +507,7 @@ public:
       // NOTE: If we want to sample the old/slows slot less often, we could decay the slot's priority here.
       //       e.g. slot_prt.set_weight(slot_index, 0.99 * slot_prt[slot_index].get_weight() )
       //       Also, in sampling without replacement mode, the priority of slot_index is also decreased.
+      //       e.g. priority_decay = 0
       lock.unlock();
       if(true) {
         std::lock_guard<std::mutex> guard(slots[slot_index].slot_mutex);
@@ -513,8 +515,8 @@ public:
             slot_prt.get_weight_sum(), slots[slot_index].prt.get_weight_sum());
         uint32_t last_idx = slots[slot_index].prt.sample_index();
         weight[batch_idx] = slots[slot_index].prt.get_weight(last_idx); // rollout's weight determined by the last entry
-        if(no_replacement)
-          slots[slot_index].prt.set_weight(last_idx, 0);
+        if(priority_decay != 1.0)
+          slots[slot_index].prt.set_weight(last_idx, priority_decay * weight[batch_idx]);
         long len = rollout_len - 1;
         if(do_padding)
           len = std::min<long>(rollout_len - 1, slots[slot_index].get_offset_in_episode(last_idx));
@@ -539,7 +541,7 @@ public:
           memcpy(dst, src, len * entry_size);
         qlog_debug("w[%u]: %e\n", batch_idx, weight[batch_idx]);
       }
-      if(no_replacement) {
+      if(priority_decay != 1.0) {
         lock.lock();
         slot_prt.set_weight(slot_index, slots[slot_index].prt.get_weight_sum());
       }
