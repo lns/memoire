@@ -100,7 +100,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("sub_hwm", &RMC::sub_hwm)
     .def_readwrite("req_hwm", &RMC::req_hwm)
     .def_readwrite("push_hwm", &RMC::push_hwm)
-    .def_readwrite("sub_size", &RMC::sub_size)
+    .def_readwrite("sub_buf_size", &RMC::sub_buf_size)
     .def_readonly("uuid", &RMC::uuid)
     .def("view", [](RMC& rmc, int i) { return rmc.info.view(i); })
     .def("close",            &RMC::close,              py::call_guard<py::gil_scoped_release>())

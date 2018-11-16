@@ -17,7 +17,7 @@
 #include "prt_tree.hpp"
 #include "buffer_view.hpp"
 
-#define VERSION (20181114ul)
+#define VERSION (20181116ul)
 
 #define EPS (1e-6)
 

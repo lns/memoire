@@ -19,7 +19,7 @@ public:
   int sub_hwm;
   int req_hwm;
   int push_hwm;
-  size_t sub_size;              ///< default size of buffer for sub
+  size_t sub_buf_size;              ///< default size of buffer for sub
   size_t push_length;
 
   proto::RepGetInfo info;
@@ -40,7 +40,7 @@ public:
   {
     sub_hwm = req_hwm = 4;
     push_hwm = 256;
-    sub_size = 1024;
+    sub_buf_size = 1024;
     push_length = 32;
   }
 
@@ -189,7 +189,7 @@ public:
       #endif
       ZMQ_CALL(zmq_connect(soc, sub_endpoint.c_str()));
       tpcbuf.resize(256);
-      subbuf.resize(sub_size);
+      subbuf.resize(sub_buf_size);
     }
     if(topic.size() >= tpcbuf.size())
       qlog_error("topic: '%s' is too long.\n", topic.c_str());

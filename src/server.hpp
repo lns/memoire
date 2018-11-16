@@ -7,11 +7,11 @@
 #include <iostream>
 #include <functional>
 #include "replay_memory.hpp"
-#include "hexdump.hpp"
 #include <arpa/inet.h>
 #include "proxy.hpp"
 #include "msg.pb.h"
 #include "py_serial.hpp"
+#include "qtime.hpp"
 
 template<class RM>
 class ReplayMemoryServer : public Proxy {
@@ -191,7 +191,7 @@ public:
           std::lock_guard<std::mutex> guard(logfile_mutex);
           qassert(msg.has_push_log());
           const auto m = msg.push_log();
-          fwrite((void*)m.log().data(), 1, m.log().size(), logfile);
+          fprintf(logfile, "%s,%s,%s\n", qlib::timestr().c_str(), msg.sender().c_str(), m.log().c_str());
           fflush(logfile);
         }
       }
