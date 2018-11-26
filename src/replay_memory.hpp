@@ -200,6 +200,7 @@ public:
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
+      qassert(prm->reward_coeff.size() == prm->reward_buf().size()); // reward_coeff size mismatch
       double local_diff = 0;
       double local_ma = prm->ma_sqa;
       float c = sqrt(prm->ma_sqa/2);
