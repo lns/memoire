@@ -102,42 +102,6 @@ public:
     set_push_length(push_length); // resize queue
   }
 
-  void push_data(void * data, uint32_t n_step, bool is_episode_end) {
-    thread_local void * soc = nullptr;
-    thread_local std::string pushbuf;
-    thread_local uint32_t start_step = 0;
-    if(not soc) {
-      if(push_endpoint == "") {
-        qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
-        return;
-      }
-      soc = new_zmq_socket(ZMQ_PUSH);
-      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &push_hwm, sizeof(push_hwm)));
-      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &push_hwm, sizeof(push_hwm))); // not used
-      ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
-      pushbuf.resize(1024, '\0');
-    }
-    proto::Msg push;
-    push.set_type(proto::PUSH_DATA);
-    push.set_version(push.version());
-    push.set_sender(uuid);
-    auto * d = push.mutable_push_data();
-    d->set_is_episode_end(is_episode_end);
-    d->set_start_step(start_step);
-    d->set_n_step(n_step);
-    d->set_slot_index(info.slot_index());
-    d->set_data(data, n_step * info.entry_size());
-    qassert(push.SerializeToString(&pushbuf));
-    qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
-    ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
-    if(is_episode_end)
-      qlog_info("Episode length: %u, last_trunk: %u\n", start_step+n_step, n_step);
-    if(is_episode_end)
-      start_step = 0;
-    else
-      start_step += n_step;
-  }
-
   void push_log(const std::string& msg) {
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
@@ -231,7 +195,7 @@ public:
     return py::bytes(ret);
   }
 
-  void py_add_entry(py::tuple entry, bool is_episode_end) {
+  void py_add_entry(py::tuple entry, bool is_term) {
     thread_local Mem mem(info.entry_size());
     std::vector<BufView> view;
     view.emplace_back(entry[entry.size()-3]); // r
@@ -248,24 +212,56 @@ public:
         qassert(view[i].is_consistent_with(info.view(i)));
         head += view[i].to_memory(head);
       }
-      queue->put(is_episode_end, reinterpret_cast<typename RM::DataEntry*>(mem.data()));
+      queue->put(is_term, reinterpret_cast<typename RM::DataEntry*>(mem.data()));
     }
   }
 
   void push_worker_main() {
     // This mainloop should be executed by only one thread.
-    Mem mem(info.entry_size() * push_length);
-    size_t count = 0;
-    char * head = reinterpret_cast<char*>(mem.data());
-    while(true) {
-      bool is_term;
-      qassert(count < push_length);
-      queue->get(is_term, reinterpret_cast<typename RM::DataEntry*>(head + count * info.entry_size()));
-      count += 1;
-      if(is_term or count == push_length) {
-        push_data(mem.data(), count, is_term);
-        count = 0;
+    thread_local void * soc = nullptr;
+    thread_local std::string pushbuf;
+    thread_local uint32_t start_step = 0;
+    if(not soc) {
+      if(push_endpoint == "") {
+        qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
+        return;
       }
+      soc = new_zmq_socket(ZMQ_PUSH);
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &push_hwm, sizeof(push_hwm)));
+      ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &push_hwm, sizeof(push_hwm))); // not used
+      ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
+      pushbuf.resize(1024, '\0');
+    }
+    while(true) {
+      proto::Msg push;
+      push.set_type(proto::PUSH_DATA);
+      push.set_version(push.version());
+      push.set_sender(uuid);
+      auto * d = push.mutable_push_data();
+      d->set_start_step(start_step);
+      d->set_n_step(push_length);
+      d->set_slot_index(info.slot_index());
+      d->clear_term();
+      // Get push_length entries
+      Mem mem(info.entry_size() * push_length);
+      size_t count = 0;
+      char * head = reinterpret_cast<char*>(mem.data());
+      while(count < push_length) {
+        bool term;
+        queue->get(term, reinterpret_cast<typename RM::DataEntry*>(head + count * info.entry_size()));
+        d->add_term(term);
+        count += 1;
+        start_step += 1;
+        if(term) {
+          qlog_info("Episode length: %u\n", start_step);
+          start_step = 0;
+        }
+      }
+      qassert(count == push_length and (size_t)d->term_size() == push_length);
+      d->set_data(mem.data(), count * info.entry_size());
+      qassert(push.SerializeToString(&pushbuf));
+      qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
+      ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     }
   }
 

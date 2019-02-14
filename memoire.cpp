@@ -22,6 +22,7 @@ static void print_logo() __attribute__((constructor));
 
 void print_logo() {
   fprintf(stderr, " Memoire v3, ver %lu, built on %s.\n", VERSION, __DATE__);
+  qlog_set_print_time(true);
 }
 
 typedef py::array_t<float, py::array::c_style> pyarr_float;
