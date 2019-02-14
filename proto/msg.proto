@@ -37,11 +37,11 @@ message RepGetInfo {
 }
 
 message PushData {
-  required bool is_episode_end = 1;
   required uint32 start_step = 2;
   required uint32 n_step = 3;
   required uint32 slot_index = 4;
   required bytes data = 10;
+  repeated bool term = 11;
 }
 
 message PushLog {
@@ -94,7 +94,7 @@ message Msg {
   }
   required MsgType type = 99;  // What type of message
 
-  optional string version = 100 [default='0.1.3'];// Version of protocal interface
+  optional string version = 100 [default='0.1.4'];// Version of protocal interface
   optional string sender = 101;  // Sender's uuid
   optional string error = 102;  // error message
 };

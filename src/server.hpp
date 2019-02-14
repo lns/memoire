@@ -171,19 +171,23 @@ public:
       if(msg.type() == proto::PUSH_DATA) {
         qassert(msg.has_push_data());
         const auto m = msg.push_data();
-        int retry = 10;
-        while(not rem.add_data(m.slot_index(), (void*)m.data().data(), m.start_step(), m.n_step(), m.is_episode_end())) {
-          qlog_warning("add_data() failed. Retry left: %d.\n", retry);
-          if(retry <= 0) {
+        int begin = 0;
+        int start_step = m.start_step();
+        while(begin < m.term_size()) {
+          int end = begin + 1;
+          while(end < m.term_size() and m.term(end-1) == false)
+            end += 1;
+          // This can be further optimized by rewrite add_data() in replay_memory.hpp
+          if(not rem.add_data(m.slot_index(), (void*)(m.data().data() + begin * rem.entry_size),
+                start_step, end-begin, m.term(end-1))) {
             qlog_warning("Unrecoverable failure of add_data(). Data may be lost.\n");
             rem.discard_data(m.slot_index());
-            break;
           }
-          else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            //std::this_thread::yield();
-          }
-          retry -= 1;
+          if(m.term(end-1))
+            start_step = 0;
+          else
+            start_step += end-begin;
+          begin = end;
         }
       }
       else if(msg.type() == proto::PUSH_LOG) {
