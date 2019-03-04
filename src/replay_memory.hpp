@@ -499,7 +499,7 @@ public:
     qassert(rollout_len <= max_step);
     for(uint32_t batch_idx=0; batch_idx<batch_size; batch_idx++) {
       std::unique_lock<std::mutex> lock(rem_mutex);
-      if(slot_prt.get_weight_sum() <= 0) { // EPS?
+      if(slot_prt.get_weight_sum() <= batch_size * EPS) { // EPS?
         qlog_info("get_data(): Waiting for data.\n");
         not_empty.wait(lock, [this](){ return slot_prt.get_weight_sum() > 0; });
       }
