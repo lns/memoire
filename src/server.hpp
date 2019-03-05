@@ -136,16 +136,17 @@ public:
    */
   void pull_worker_main(const char * endpoint, typename RM::Mode mode)
   {
-    void * soc = new_zmq_socket(ZMQ_PULL);
+    void * soc = new_zmq_socket(ZMQ_REP);
     ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &pull_hwm, sizeof(pull_hwm)));
     ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &pull_hwm, sizeof(pull_hwm)));
-    std::string buf(pull_buf_size, '\0');
+    std::string buf(pull_buf_size, '\0'), repbuf(1024, '\0');
     if(mode == RM::Bind)
       ZMQ_CALL(zmq_bind(soc, endpoint));
     else if(mode == RM::Conn)
       ZMQ_CALL(zmq_connect(soc, endpoint));
     int size;
     while(true) {
+      bool succ = false;
       size = zmq_recv(soc, &buf[0], buf.size(), 0);
       if(size == -1) { // receive failed.
         int e = zmq_errno();
@@ -168,9 +169,9 @@ public:
       }
       qlog_debug("Received msg of size(%d): '%s'\n", size, msg.DebugString().c_str());
       qassert(msg.version() == msg.version());
-      if(msg.type() == proto::PUSH_DATA) {
-        qassert(msg.has_push_data());
-        const auto m = msg.push_data();
+      if(msg.type() == proto::REQ_PUSH_DATA) {
+        qassert(msg.has_req_push_data());
+        const auto m = msg.req_push_data();
         int begin = 0;
         int start_step = m.start_step();
         while(begin < m.term_size()) {
@@ -189,18 +190,30 @@ public:
             start_step += end-begin;
           begin = end;
         }
+        succ = true;
       }
-      else if(msg.type() == proto::PUSH_LOG) {
+      else if(msg.type() == proto::REQ_PUSH_LOG) {
         if(logfile) {
           std::lock_guard<std::mutex> guard(logfile_mutex);
-          qassert(msg.has_push_log());
-          const auto m = msg.push_log();
+          qassert(msg.has_req_push_log());
+          const auto m = msg.req_push_log();
           fprintf(logfile, "%s,%s,%s\n", qlib::timestr().c_str(), msg.sender().c_str(), m.log().c_str());
           fflush(logfile);
         }
+        succ = true;
       }
       else
         qthrow("Unknown args->type");
+      // Rep
+      proto::Msg m;
+      m.set_type(proto::REP_PUSH);
+      m.set_version(m.version());
+      m.set_sender(rem.uuid);
+      auto * d = m.mutable_rep_push();
+      d->set_succ(succ);
+      qassert(m.SerializeToString(&repbuf));
+      qlog_debug("Send msg of size(%lu): '%s'\n", repbuf.size(), m.DebugString().c_str());
+      ZMQ_CALL(zmq_send(soc, repbuf.data(), repbuf.size(), 0));
     }
   }
 

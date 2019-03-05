@@ -105,26 +105,33 @@ public:
   void push_log(const std::string& msg) {
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
+    thread_local Mem repbuf;
     if(not soc) {
       if(push_endpoint == "") {
         qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
         return;
       }
-      soc = new_zmq_socket(ZMQ_PUSH);
+      soc = new_zmq_socket(ZMQ_REQ);
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &push_hwm, sizeof(push_hwm)));
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &push_hwm, sizeof(push_hwm))); // not used
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(1024, '\0');
+      repbuf.resize(1024);
     }
     proto::Msg push;
-    push.set_type(proto::PUSH_LOG);
+    push.set_type(proto::REQ_PUSH_LOG);
     push.set_version(push.version());
     push.set_sender(uuid);
-    auto * d = push.mutable_push_log();
+    auto * d = push.mutable_req_push_log();
     d->set_log(msg);
     qassert(push.SerializeToString(&pushbuf));
     qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
+    int size;
+    qlog_debug("Waiting for response ..\n");
+    ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
+    qlog_debug("Received msg of size(%d).\n", size);
+    // TODO: check returned 'succ'
   }
 
   /**
@@ -220,24 +227,26 @@ public:
     // This mainloop should be executed by only one thread.
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
+    thread_local Mem repbuf;
     thread_local uint32_t start_step = 0;
     if(not soc) {
       if(push_endpoint == "") {
         qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
         return;
       }
-      soc = new_zmq_socket(ZMQ_PUSH);
+      soc = new_zmq_socket(ZMQ_REQ);
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_SNDHWM, &push_hwm, sizeof(push_hwm)));
       ZMQ_CALL(zmq_setsockopt(soc, ZMQ_RCVHWM, &push_hwm, sizeof(push_hwm))); // not used
       ZMQ_CALL(zmq_connect(soc, push_endpoint.c_str()));
       pushbuf.resize(1024, '\0');
+      repbuf.resize(1024);
     }
     while(true) {
       proto::Msg push;
-      push.set_type(proto::PUSH_DATA);
+      push.set_type(proto::REQ_PUSH_DATA);
       push.set_version(push.version());
       push.set_sender(uuid);
-      auto * d = push.mutable_push_data();
+      auto * d = push.mutable_req_push_data();
       d->set_start_step(start_step);
       d->set_n_step(push_length);
       d->set_slot_index(info.slot_index());
@@ -262,6 +271,11 @@ public:
       qassert(push.SerializeToString(&pushbuf));
       qlog_debug("Send msg of size(%lu): '%s'\n", pushbuf.size(), push.DebugString().c_str()); 
       ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
+      int size;
+      qlog_debug("Waiting for response ..\n");
+      ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
+      qlog_debug("Received msg of size(%d).\n", size);
+      // TODO: check returned 'succ'
     }
   }
 
