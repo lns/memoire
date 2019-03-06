@@ -134,7 +134,7 @@ public:
     ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
     timer.stop();
     if(timer.cnt() % 10 == 0) {
-      qlog_info("%s waiting time: min: %5.3lfms, avg: %5.3lfms max: %5.3lfms\n",
+      qlog_info("%s waiting time: min: %5.3lfms, avg: %5.3lfms, max: %5.3lfms\n",
           __func__, timer.min(), timer.avg(), timer.max());
       timer.clear();
     }
@@ -297,7 +297,7 @@ public:
       ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
       timer.stop();
       if(timer.cnt() % 10 == 0) {
-        qlog_info("%s waiting time: min: %5.3lfms, avg: %5.3lfms max: %5.3lfms\n",
+        qlog_info("%s waiting time: min: %5.3lfms, avg: %5.3lfms, max: %5.3lfms\n",
             __func__, timer.min(), timer.avg(), timer.max());
         timer.clear();
       }

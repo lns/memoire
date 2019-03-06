@@ -193,7 +193,7 @@ public:
     /**
      * Update weight in an episode.
      */
-    void update_weight(ReplayMemory * prm, long off, long len) {
+    void update_weight(ReplayMemory * prm, long off, long len, long max_traceback_length) {
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
@@ -201,7 +201,7 @@ public:
       double local_diff = 0;
       double local_ma = prm->ma_sqa;
       float c = sqrt(prm->ma_sqa/2);
-      for(int i=0; i<len; i++) {
+      for(int i=std::max<int>(0, len-max_traceback_length); i<len; i++) {
         long idx = (off + i) % data.capacity();
         auto prev_value  = data[idx].value(prm).as_array<float>();
         auto prev_qvest  = data[idx].qvest(prm).as_array<float>();
@@ -217,9 +217,6 @@ public:
       }
       prm->ma_sqa += 1e-8 * local_diff;
       prm->ma_sqa = std::max<float>(prm->ma_sqa, EPS);
-    }
-    void update_weight(ReplayMemory * prm, const Episode& epi) {
-      return update_weight(prm, epi.offset, epi.length);
     }
 
     void clear_priority(long offset, long len) {
@@ -311,7 +308,7 @@ public:
       cur_step += n_step;
       // Update value and weight
       update_value(prm, new_offset, new_length, is_episode_end, 4*n_step); // max_traceback_length = 4*n_step
-      update_weight(prm, new_offset, new_length);
+      update_weight(prm, new_offset, new_length, 4*n_step);
       if(not prm->do_padding) // Leave first prm->rollout_len-1 entry's weight as zero
         clear_priority(new_offset, std::max<long>(prm->rollout_len - 1 - step_count, 0));
       clear_priority(idx, prm->rollout_len - 1);
