@@ -166,13 +166,13 @@ public:
     /**
      * Update value in an episode
      */
-    void update_value(const ReplayMemory * prm, long off, long len, bool is_finished) {
+    void update_value(const ReplayMemory * prm, long off, long len, bool is_finished, long max_traceback_length) {
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
       const auto& gamma = prm->discount_factor;
       // Fill qvest
-      for(int i=len-1; i>=0; i--) {
+      for(int i=len-1; i>=std::max<int>(0, len-max_traceback_length); i--) {
         long post = (off + i + 1) % data.capacity();
         long prev = (off + i) % data.capacity();
         auto post_value  = data[post].value(prm).as_array<float>();
@@ -313,7 +313,7 @@ public:
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
       // Update value and weight
-      update_value(prm, new_offset, new_length, is_episode_end);
+      update_value(prm, new_offset, new_length, is_episode_end, 4*n_step); // max_traceback_length = 4*n_step
       update_weight(prm, new_offset, new_length);
       if(not prm->do_padding) // Leave first prm->rollout_len-1 entry's weight as zero
         clear_priority(new_offset, std::max<long>(prm->rollout_len - 1 - step_count, 0));
