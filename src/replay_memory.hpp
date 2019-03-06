@@ -189,9 +189,6 @@ public:
         }
       }
     }
-    void update_value(const ReplayMemory * prm, const Episode& epi) {
-      return update_value(prm, epi.offset, epi.length, true);
-    }
 
     /**
      * Update weight in an episode.
