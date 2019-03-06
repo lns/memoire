@@ -106,6 +106,7 @@ public:
     thread_local void * soc = nullptr;
     thread_local std::string pushbuf;
     thread_local Mem repbuf;
+    thread_local qlib::Timer timer;
     if(not soc) {
       if(push_endpoint == "") {
         qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
@@ -129,9 +130,27 @@ public:
     ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
     int size;
     qlog_debug("Waiting for response ..\n");
+    timer.start();
     ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
+    timer.stop();
+    if(timer.cnt() % 10 == 0) {
+      qlog_info("%s waiting time: min: %5.3lfms, avg: %5.3lfms max: %5.3lfms\n",
+          __func__, timer.min(), timer.avg(), timer.max());
+      timer.clear();
+    }
     qlog_debug("Received msg of size(%d).\n", size);
-    // TODO: check returned 'succ'
+    proto::Msg rep;
+    if(not rep.ParseFromArray(repbuf.data(), size)) {
+      std::ofstream out("repbuf.msg", std::ios_base::binary | std::ios_base::trunc);
+      out << std::string((const char*)repbuf.data(), size);
+      qlog_warning("ParseFromArray(%p, %d) failed. Saved to 'repbuf.msg'.\n", repbuf.data(), size);
+    }
+    qassert(rep.version() == push.version());
+    qassert(rep.type() == proto::REP_PUSH);
+    // Get info
+    bool succ = rep.rep_push().succ();
+    if(not succ)
+      qlog_warning("PushLog return status is failed.\n");
   }
 
   /**
@@ -229,6 +248,7 @@ public:
     thread_local std::string pushbuf;
     thread_local Mem repbuf;
     thread_local uint32_t start_step = 0;
+    thread_local qlib::Timer timer;
     if(not soc) {
       if(push_endpoint == "") {
         qlog_warning("To use %s(), please set client.push_endpoint firstly.\n", __func__);
@@ -273,9 +293,27 @@ public:
       ZMQ_CALL(zmq_send(soc, pushbuf.data(), pushbuf.size(), 0));
       int size;
       qlog_debug("Waiting for response ..\n");
+      timer.start();
       ZMQ_CALL(size = zmq_recv(soc, repbuf.data(), repbuf.size(), 0));
+      timer.stop();
+      if(timer.cnt() % 10 == 0) {
+        qlog_info("%s waiting time: min: %5.3lfms, avg: %5.3lfms max: %5.3lfms\n",
+            __func__, timer.min(), timer.avg(), timer.max());
+        timer.clear();
+      }
       qlog_debug("Received msg of size(%d).\n", size);
-      // TODO: check returned 'succ'
+      proto::Msg rep;
+      if(not rep.ParseFromArray(repbuf.data(), size)) {
+        std::ofstream out("repbuf.msg", std::ios_base::binary | std::ios_base::trunc);
+        out << std::string((const char*)repbuf.data(), size);
+        qlog_warning("ParseFromArray(%p, %d) failed. Saved to 'repbuf.msg'.\n", repbuf.data(), size);
+      }
+      qassert(rep.version() == push.version());
+      qassert(rep.type() == proto::REP_PUSH);
+      // Get info
+      bool succ = rep.rep_push().succ();
+      if(not succ)
+        qlog_warning("PushData return status is failed.\n");
     }
   }
 
