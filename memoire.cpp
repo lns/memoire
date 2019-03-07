@@ -78,6 +78,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("rollout_len", &RM::rollout_len)
     .def_readwrite("do_padding", &RM::do_padding)
     .def_readwrite("priority_decay", &RM::priority_decay)
+    .def_readwrite("max_traceback_factor", &RM::max_traceback_factor)
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("reward_coeff", &RM::reward_coeff)
     ;

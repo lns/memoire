@@ -307,8 +307,8 @@ public:
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
       // Update value and weight
-      update_value(prm, new_offset, new_length, is_episode_end, 4*n_step); // max_traceback_length = 4*n_step
-      update_weight(prm, new_offset, new_length, 4*n_step);
+      update_value(prm, new_offset, new_length, is_episode_end, prm->max_traceback_factor*n_step);
+      update_weight(prm, new_offset, new_length, prm->max_traceback_factor*n_step);
       if(not prm->do_padding) // Leave first prm->rollout_len-1 entry's weight as zero
         clear_priority(new_offset, std::max<long>(prm->rollout_len - 1 - step_count, 0));
       clear_priority(idx, prm->rollout_len - 1);
@@ -347,6 +347,7 @@ public:
   unsigned rollout_len;              ///< rollout length
   bool do_padding;                   ///< padding before first entry
   float priority_decay;              ///< decay factor for sample priority
+  unsigned max_traceback_factor;     ///< max traceback factor
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -383,6 +384,7 @@ public:
     rollout_len{1},
     do_padding{false},
     priority_decay{1.0},
+    max_traceback_factor{32},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -445,6 +447,7 @@ public:
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
     fprintf(f, "do_padding:    %d\n",  do_padding);
     fprintf(f, "priority_decay:%lf\n", priority_decay);
+    fprintf(f, "max_tb_factor: %u\n",  max_traceback_factor);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)
