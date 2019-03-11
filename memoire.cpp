@@ -21,7 +21,7 @@ namespace backward {
 static void print_logo() __attribute__((constructor));
 
 void print_logo() {
-  fprintf(stderr, " Memoire v3, ver %lu, built on %s.\n", VERSION, __DATE__);
+  fprintf(stderr, " Memoire v4, ver %lu, built on %s.\n", VERSION, __DATE__);
   qlog_set_print_time(true);
 }
 
@@ -78,7 +78,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("rollout_len", &RM::rollout_len)
     .def_readwrite("do_padding", &RM::do_padding)
     .def_readwrite("priority_decay", &RM::priority_decay)
-    .def_readwrite("max_traceback_factor", &RM::max_traceback_factor)
+    .def_readwrite("traceback_threshold", &RM::traceback_threshold)
     .def_readwrite("discount_factor", &RM::discount_factor)
     .def_readwrite("reward_coeff", &RM::reward_coeff)
     ;

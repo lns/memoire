@@ -164,56 +164,50 @@ public:
     }
 
     /**
-     * Update value in an episode
+     * Update value and weight in an episode
      */
-    void update_value(const ReplayMemory * prm, long off, long len, bool is_finished, long max_traceback_length) {
-      assert(prm->reward_buf().size() != 0);
-      assert(prm->value_buf().size() != 0);
-      assert(prm->qvest_buf().size() != 0);
-      const auto& gamma = prm->discount_factor;
-      // Fill qvest
-      for(int i=len-1; i>=std::max<int>(0, len-max_traceback_length); i--) {
-        long post = (off + i + 1) % data.capacity();
-        long prev = (off + i) % data.capacity();
-        auto post_value  = data[post].value(prm).as_array<float>();
-        auto prev_reward = data[prev].reward(prm).as_array<float>();
-        auto prev_qvest  = data[prev].qvest(prm).as_array<float>();
-        auto post_qvest  = data[post].qvest(prm).as_array<float>();
-        for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
-          // TD-Lambda
-          if(i == len-1) // last
-            prev_qvest[j] = (is_finished ? prev_reward[j] : data[prev].value(prm).as_array<float>()[j]);
-          else
-            prev_qvest[j] = prev_reward[j] + prm->mix_lambda * gamma[j] * post_qvest[j] +
-              (1-prm->mix_lambda) * gamma[j] * post_value[j];
-        }
-      }
-    }
-
-    /**
-     * Update weight in an episode.
-     */
-    void update_weight(ReplayMemory * prm, long off, long len, long max_traceback_length) {
+    void update(ReplayMemory * prm, long off, long len, bool is_finished, long min_traceback_length) {
       assert(prm->reward_buf().size() != 0);
       assert(prm->value_buf().size() != 0);
       assert(prm->qvest_buf().size() != 0);
       qassert(prm->reward_coeff.size() == prm->reward_buf().size()); // reward_coeff size mismatch
+      const auto& gamma = prm->discount_factor;
       double local_diff = 0;
       double local_ma = prm->ma_sqa;
       float c = sqrt(prm->ma_sqa/2);
-      for(int i=std::max<int>(0, len-max_traceback_length); i<len; i++) {
-        long idx = (off + i) % data.capacity();
-        auto prev_value  = data[idx].value(prm).as_array<float>();
-        auto prev_qvest  = data[idx].qvest(prm).as_array<float>();
+      // Fill qvest
+      for(int i=len-1; i>=0; i--) {
+        long post = (off + i + 1) % data.capacity();
+        long prev = (off + i) % data.capacity();
+        auto prev_value  = data[prev].value(prm).as_array<float>();
+        auto post_value  = data[post].value(prm).as_array<float>();
+        auto prev_reward = data[prev].reward(prm).as_array<float>();
+        auto prev_qvest  = data[prev].qvest(prm).as_array<float>();
+        auto post_qvest  = data[post].qvest(prm).as_array<float>();
+        float sum_diff = 0;
         // R is computed with TD-lambda, while V is the original value in prediction
         float priority = 0;
-        for(int i=0; i<(int)prev_qvest.size(); i++)
-          priority += prm->reward_coeff[i] * (prev_qvest[i] - prev_value[i]);
+        for(int j=0; j<(int)prev_reward.size(); j++) { // OPTIMIZE:
+          // TD-Lambda
+          float qv;
+          if(i == len-1) // last
+            qv = (is_finished ? prev_reward[j] : data[prev].value(prm).as_array<float>()[j]);
+          else
+            qv = prev_reward[j] + prm->mix_lambda * gamma[j] * post_qvest[j] +
+              (1-prm->mix_lambda) * gamma[j] * post_value[j];
+          sum_diff += prm->reward_coeff[j] * std::abs(prev_qvest[j] -  qv);
+          prev_qvest[j] = qv;
+          // update weight
+          priority += prm->reward_coeff[j] * (prev_qvest[j] - prev_value[j]);
+        }
+        // stop when the difference is neglectable
+        if(len - i > min_traceback_length and sum_diff < prm->traceback_threshold)
+          break; 
         // priority is (R-V), now update ma_sqa
         local_diff += (priority * priority - local_ma);
         // calculate real priority
         priority = pow(fabs(priority/c), prm->priority_exponent);
-        prt.set_weight(idx, priority);
+        prt.set_weight(prev, priority);
       }
       prm->ma_sqa += 1e-8 * local_diff;
       prm->ma_sqa = std::max<float>(prm->ma_sqa, EPS);
@@ -307,8 +301,7 @@ public:
       new_offset = (idx - new_length + data.capacity()) % data.capacity();
       cur_step += n_step;
       // Update value and weight
-      update_value(prm, new_offset, new_length, is_episode_end, prm->max_traceback_factor*n_step);
-      update_weight(prm, new_offset, new_length, prm->max_traceback_factor*n_step);
+      update(prm, new_offset, new_length, is_episode_end, n_step);
       if(not prm->do_padding) // Leave first prm->rollout_len-1 entry's weight as zero
         clear_priority(new_offset, std::max<long>(prm->rollout_len - 1 - step_count, 0));
       clear_priority(idx, prm->rollout_len - 1);
@@ -347,7 +340,7 @@ public:
   unsigned rollout_len;              ///< rollout length
   bool do_padding;                   ///< padding before first entry
   float priority_decay;              ///< decay factor for sample priority
-  unsigned max_traceback_factor;     ///< max traceback factor
+  float traceback_threshold;         ///< traceback stopping threshold
   std::vector<float> discount_factor;///< discount factor for calculate R with rewards
   std::vector<float> reward_coeff;   ///< reward coefficient
 
@@ -384,7 +377,7 @@ public:
     rollout_len{1},
     do_padding{false},
     priority_decay{1.0},
-    max_traceback_factor{32},
+    traceback_threshold{1e-3},
     slots{},
     slot_prt{prt_rng, static_cast<int>(n_slot)},
     rng{prt_rng},
@@ -447,7 +440,7 @@ public:
     fprintf(f, "rollout_len:   %u\n",  rollout_len);
     fprintf(f, "do_padding:    %d\n",  do_padding);
     fprintf(f, "priority_decay:%lf\n", priority_decay);
-    fprintf(f, "max_tb_factor: %u\n",  max_traceback_factor);
+    fprintf(f, "tb_threshold:  %lf\n", traceback_threshold);
     fprintf(f, "entry::nbytes  %lu\n", DataEntry::nbytes(this));
     fprintf(f, "discount_f:    [");
     for(unsigned i=0; i<discount_factor.size(); i++)
