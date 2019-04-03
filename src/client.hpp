@@ -222,6 +222,9 @@ public:
   }
 
   void py_add_entry(py::tuple entry, bool is_term) {
+    if(entry.size() != info.view_size()-1)
+      qlog_error("len(entry): %u, expected: %u.\n",
+          (unsigned)entry.size(), (unsigned)(info.view_size()-1));
     thread_local Mem mem(info.entry_size());
     std::vector<BufView> view;
     view.emplace_back(entry[entry.size()-3]); // r
@@ -235,7 +238,14 @@ public:
       // Check & Copy
       char * head = reinterpret_cast<char*>(mem.data());
       for(unsigned i=0; i<view.size(); i++) {
-        qassert(view[i].is_consistent_with(info.view(i)));
+        if(not view[i].is_consistent_with(info.view(i))) {
+          int idx = (i >= 4 ? (i-4) : (entry.size()-3+i));
+          qlog_error("entry[%d] is of dtype '%s' with shape %s, expected to be of dtype '%s' with shape %s\n", idx,
+              view[i].dtype_str().c_str(),
+              view[i].shape_str().c_str(),
+              BufView(info.view(i)).dtype_str().c_str(),
+              BufView(info.view(i)).shape_str().c_str());
+        }
         head += view[i].to_memory(head);
       }
       queue->put(is_term, reinterpret_cast<typename RM::DataEntry*>(mem.data()));
@@ -281,10 +291,8 @@ public:
         d->add_term(term);
         count += 1;
         start_step += 1;
-        if(term) {
-          qlog_info("Episode length: %u\n", start_step);
+        if(term)
           start_step = 0;
-        }
       }
       qassert(count == push_length and (size_t)d->term_size() == push_length);
       d->set_data(mem.data(), count * info.entry_size());

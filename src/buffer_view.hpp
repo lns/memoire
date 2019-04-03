@@ -197,23 +197,53 @@ public:
     return v;
   }
 
+  std::string shape_str() const {
+    std::string ret;
+    ret += "(";
+    for(const auto& each : shape_)
+      ret += std::to_string(each)+",";
+    ret += ")";
+    return ret;
+  }
+
+  std::string stride_str() const {
+    std::string ret;
+    ret += "(";
+    for(const auto& each : stride_)
+      ret += std::to_string(each/itemsize_)+",";
+    ret += ")";
+    return ret;
+  }
+
+  std::string dtype_str() const {
+    char type = format_.size() > 0 ? format_[0] : '\0';
+    switch(type) {
+      case 'B': return std::string("uint8");
+      case 'b': return std::string("int8");
+      case 'H': return std::string("uint16");
+      case 'h': return std::string("int16");
+      case 'I': return std::string("uint32");
+      case 'i': return std::string("int32");
+      case 'L': return std::string("uint64");
+      case 'l': return std::string("int64");
+      case 'f': return std::string("float32");
+      case 'd': return std::string("float64");
+      default: return std::string("(bool?)");
+    }
+    return std::string("unknwon");
+  }
+
   /**
    * Represent info in a string
    */
   std::string str() const {
     char buf[256];
-    snprintf(buf, sizeof(buf), "<BufView ptr:%p, itemsize:%ld, format:'%s',",
-        ptr_, itemsize_, format_.c_str());
+    snprintf(buf, sizeof(buf),
+        "<BufView ptr:%p, itemsize:%ld, format:'%s', dtype:'%s',",
+        ptr_, itemsize_, format_.c_str(), dtype_str().c_str());
     std::string ret = std::string(buf);
-    ret += " shape: [";
-    for(const auto& each : shape_)
-      ret += std::to_string(each)+",";
-    ret += "],";
-    ret += " stride: [";
-    for(const auto& each : stride_)
-      ret += std::to_string(each)+",";
-    ret += "],";
-    ret += ">";
+    ret += " shape: " + shape_str() + ",";
+    ret += " stride: " + stride_str() + ">";
     return ret;
   }
 

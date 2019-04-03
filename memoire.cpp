@@ -44,6 +44,9 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readonly("format", &BV::format_)
     .def_readonly("shape", &BV::shape_)
     .def_readonly("stride", &BV::stride_)
+    .def_property_readonly("dtype",  [](BV& self) {
+        return py::dtype(self.format_);
+      })
     .def(py::init([](py::buffer b) {
         return BufView(b);
       }), "buffer"_a)
@@ -95,6 +98,14 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_property_readonly("slot_index", [](RMC& rmc) { return rmc.info.slot_index(); })
     .def_property_readonly("entry_size", [](RMC& rmc) { return rmc.info.entry_size(); })
     .def_property_readonly("view_size",  [](RMC& rmc) { return rmc.info.view_size(); })
+    .def_property_readonly("template", [](RMC& rmc) {
+        py::list ret;
+        for(int i=4; i<rmc.info.view_size(); i++)
+          ret.append(BufView(rmc.info.view(i)).new_array());
+        for(int i=0; i<3; i++)
+          ret.append(BufView(rmc.info.view(i)).new_array());
+        return py::tuple(ret);
+    })   
     .def_property("push_length", &RMC::get_push_length, &RMC::set_push_length)
     .def_readwrite("sub_endpoint", &RMC::sub_endpoint)
     .def_readwrite("req_endpoint", &RMC::req_endpoint)
@@ -104,7 +115,7 @@ PYBIND11_MODULE(memoire /* module name */, m) {
     .def_readwrite("push_hwm", &RMC::push_hwm)
     .def_readwrite("sub_buf_size", &RMC::sub_buf_size)
     .def_readonly("uuid", &RMC::uuid)
-    .def("view", [](RMC& rmc, int i) { return rmc.info.view(i); })
+    .def("view", [](RMC& rmc, int i) { return BufView(rmc.info.view(i)); })
     .def("close",            &RMC::close,              py::call_guard<py::gil_scoped_release>())
     .def("get_info",         &RMC::get_info,           py::call_guard<py::gil_scoped_release>())
     .def("add_entry",        &RMC::py_add_entry)
