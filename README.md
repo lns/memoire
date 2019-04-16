@@ -78,6 +78,8 @@ cd pybind11
 pip install -e .             # Install from source
 ```
 We also use new features in [google-protobuf](https://github.com/protocolbuffers/protobuf). To install/update your protobuf to the latest version, you can install from source at [protobuf-release](https://github.com/protocolbuffers/protobuf/releases) with following commands.
+
+See installation from source instructions in [C++ Installation ](https://github.com/protocolbuffers/protobuf/blob/master/src/README.md)
 ```shell
 yum erase protobuf           # Remove old version
 cd protobuf-3.6.1/
