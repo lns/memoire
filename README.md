@@ -72,11 +72,17 @@ See `example/`
 
 ## Build
 The module is based on [pybind11](https://github.com/pybind/pybind11). We recommend to clone the latest version of pybind11 from github, and set the `PYBIND11_ROOT` properly in [Makefile](build/Makefile).
+We use the version `2.3.dev0`.
 ```shell
 pip uninstall pybind11       # Remove old version
 cd pybind11
 pip install -e .             # Install from source
 ```
+or install from github (recommended)
+```bash
+pip install git+https://github.com/pybind/pybind11.git
+```
+
 We also use new features in [google-protobuf](https://github.com/protocolbuffers/protobuf). To install/update your protobuf to the latest version, you can install from source at [protobuf-release](https://github.com/protocolbuffers/protobuf/releases) with following commands.
 
 See installation from source instructions in [C++ Installation ](https://github.com/protocolbuffers/protobuf/blob/master/src/README.md)
